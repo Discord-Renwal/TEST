@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>goGreen</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>🌱 goGreen</h1>
+      <div class="repo" id="repo">저장소 정보를 불러오는 중…</div>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>기간</h2>
+        <div class="row">
+          <label>
+            시작 날짜
+            <input type="date" id="start" />
+          </label>
+          <label>
+            종료 날짜
+            <input type="date" id="end" />
+          </label>
+        </div>
+        <div class="chips">
+          <button type="button" class="chip" data-preset="thisYear">올해</button>
+          <button type="button" class="chip" data-preset="lastYear">작년</button>
+          <button type="button" class="chip" data-preset="last12">최근 12개월</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>모드</h2>
+        <div class="tabs">
+          <button type="button" class="tab is-active" data-mode="random">랜덤 채우기</button>
+          <button type="button" class="tab" data-mode="art">텍스트 아트</button>
+        </div>
+
+        <div class="mode-body" id="mode-random">
+          <label class="stack">
+            <span class="label-row">
+              하루 커밋 수 <em id="range-label">1 ~ 4</em>
+            </span>
+            <div class="dual">
+              <span>최소</span>
+              <input type="range" id="min" min="1" max="20" value="1" />
+              <output id="min-out">1</output>
+            </div>
+            <div class="dual">
+              <span>최대</span>
+              <input type="range" id="max" min="1" max="20" value="4" />
+              <output id="max-out">4</output>
+            </div>
+            <p class="hint">하루에 <strong>최소~최대</strong> 사이의 랜덤한 수만큼 커밋합니다. 최대 20개까지.</p>
+          </label>
+
+          <label class="stack">
+            <span class="label-row">
+              채우기 밀도 <em id="density-out">70%</em>
+            </span>
+            <input type="range" id="density" min="5" max="100" value="70" />
+            <p class="hint">각 날짜가 커밋을 받을 확률입니다. 100%면 하루도 빠짐없이 채워집니다.</p>
+          </label>
+
+          <label class="stack">
+            <span class="label-row">시드</span>
+            <div class="dual">
+              <input type="number" id="seed" value="1" min="0" />
+              <button type="button" class="ghost" id="reseed">🎲 다시 뽑기</button>
+            </div>
+            <p class="hint">같은 시드는 항상 같은 그래프를 만듭니다. 미리보기가 실제 결과와 정확히 일치합니다.</p>
+          </label>
+        </div>
+
+        <div class="mode-body hidden" id="mode-art">
+          <label class="stack">
+            <span class="label-row">텍스트</span>
+            <input type="text" id="text" value="Tuki." maxlength="24" />
+            <p class="hint">A–Z, 0–9, 공백, <code>. , ! ? - + : ' &lt; &gt;</code> 를 지원합니다.</p>
+          </label>
+          <label class="stack">
+            <span class="label-row">
+              픽셀당 커밋 수 <em id="per-pixel-out">4</em>
+            </span>
+            <input type="range" id="perPixel" min="1" max="20" value="4" />
+            <p class="hint">숫자가 클수록 글자가 진한 초록으로 나옵니다.</p>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel wide">
+        <div class="preview-head">
+          <h2>미리보기</h2>
+          <div class="legend">
+            <span>적음</span>
+            <i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i>
+            <span>많음</span>
+          </div>
+        </div>
+
+        <div class="graph-scroll">
+          <div class="graph" id="graph"></div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+        <div class="error hidden" id="error"></div>
+      </section>
+
+      <section class="panel wide">
+        <h2>실행</h2>
+        <p class="warn">
+          <strong>커밋 생성</strong>을 누르면 커밋을 만든 뒤 곧바로 <strong>GitHub(origin)로 push</strong> 합니다.
+          push된 커밋은 되돌리기 어렵습니다. 되돌리려면 현재 위치를 먼저 기억해 두세요:
+          <code>git rev-parse HEAD</code>
+        </p>
+        <div class="actions">
+          <button type="button" id="run" class="primary">커밋 생성 &amp; 푸시</button>
+          <span class="run-note" id="run-note"></span>
+        </div>
+        <div class="progress hidden" id="progress">
+          <div class="bar"><div class="fill" id="fill"></div></div>
+          <pre id="log"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
