@@ -20,8 +20,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch src/examples/basic-bot.ts",
-    "start": "node dist/examples/basic-bot.js",
+    "bot": "tsx src/scripts/start.ts",
+    "dev": "tsx watch src/scripts/start.ts",
+    "start": "node dist/scripts/start.js",
     "login": "tsx src/scripts/login.ts",
     "doctor": "tsx src/scripts/doctor.ts",
     "typecheck": "tsc --noEmit",

@@ -7,6 +7,8 @@ const schema = z.object({
   CHZZK_REDIRECT_URI: z.string().url().default('http://localhost:3000/auth/callback'),
   CHZZK_LOGIN_PORT: z.coerce.number().int().positive().default(3000),
   CHZZK_TOKEN_FILE: z.string().default('.tokens/chzzk.json'),
+  BOT_CONFIG_FILE: z.string().default('data/config.json'),
+  DASHBOARD_PORT: z.coerce.number().int().positive().default(4700),
   BOT_COMMAND_PREFIX: z.string().default('!'),
   LOG_LEVEL: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),
 });

@@ -51,3 +51,39 @@ export {
   type CommandRouterOptions,
 } from './bot/commandRouter.js';
 export { ChatSender, type ChatSenderOptions } from './bot/chatSender.js';
+export { BotRuntime, type BotStats } from './bot/runtime.js';
+
+export { ConfigStore } from './store/configStore.js';
+export {
+  botConfig,
+  defaultConfig,
+  starterConfig,
+  ROLE_LABELS,
+  type BotConfig,
+  type CustomCommand,
+  type AutoResponse,
+  type BannedWord,
+  type CommandType,
+  type MatchMode,
+  type ModerationAction,
+  type GeneralSettings,
+  type PermissionSettings,
+  type ModerationSettings,
+  type UserRoleCodeValue,
+} from './store/schema.js';
+
+export {
+  CustomCommandEngine,
+  parseItems,
+  render,
+  visibleCommandNames,
+  MAX_LIST_ITEMS_SHOWN,
+  type CommandOutcome,
+} from './features/customCommands.js';
+export { AutoResponder } from './features/autoResponder.js';
+export { Moderator, type ModerationVerdict } from './features/moderation.js';
+export { CooldownTracker } from './features/cooldown.js';
+export { matches, isValidPattern } from './features/matcher.js';
+export { isAdmin, isIgnored, hasRole, normalizeRole } from './features/permissions.js';
+
+export { createDashboard, type DashboardOptions } from './web/server.js';

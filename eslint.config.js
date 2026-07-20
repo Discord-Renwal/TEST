@@ -28,6 +28,23 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
+    // 대시보드 스크립트는 브라우저에서 돕니다.
+    files: ['src/web/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        confirm: 'readonly',
+        prompt: 'readonly',
+        alert: 'readonly',
+      },
+    },
+  },
+  {
     // 테스트는 목(mock) 특성상 await 없는 async 함수와 느슨한 문자열화가 자연스럽습니다.
     files: ['tests/**/*.ts'],
     rules: {

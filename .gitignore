@@ -31,3 +31,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# 봇 설정 데이터 (명령어/자동응답/금칙어)
+data/
