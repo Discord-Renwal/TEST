@@ -3,8 +3,13 @@ import { splitMessage } from '../api/chat.js';
 import { noopLogger, type Logger } from '../core/logger.js';
 
 export interface ChatSenderOptions {
-  /** 메시지 사이 최소 간격(ms). 쿼터 초과(429)를 피하기 위한 값. 기본 1200ms */
-  intervalMs?: number;
+  /**
+   * 메시지 사이 최소 간격(ms).
+   *
+   * 함수를 넘기면 매 전송 직전에 다시 읽습니다. 대시보드에서 값을 바꿨을 때
+   * 봇을 재시작하지 않고 반영하려면 함수 형태로 넘기세요.
+   */
+  intervalMs?: number | (() => number);
   /** 대기열 최대 길이. 넘치면 가장 오래된 것부터 버립니다. 기본 50 */
   maxQueue?: number;
   logger?: Logger;
@@ -24,7 +29,7 @@ interface QueueItem {
  */
 export class ChatSender {
   private readonly queue: QueueItem[] = [];
-  private readonly intervalMs: number;
+  private readonly getIntervalMs: () => number;
   private readonly maxQueue: number;
   private readonly log: Logger;
   private draining = false;
@@ -34,7 +39,8 @@ export class ChatSender {
     private readonly chat: ChatApi,
     options: ChatSenderOptions = {}
   ) {
-    this.intervalMs = options.intervalMs ?? 1200;
+    const interval = options.intervalMs ?? 2000;
+    this.getIntervalMs = typeof interval === 'function' ? interval : () => interval;
     this.maxQueue = options.maxQueue ?? 50;
     this.log = (options.logger ?? noopLogger).child('sender');
   }
@@ -69,7 +75,8 @@ export class ChatSender {
 
     try {
       while (this.queue.length > 0) {
-        const wait = this.intervalMs - (Date.now() - this.lastSentAt);
+        // 매번 다시 읽어, 설정 변경이 다음 메시지부터 바로 적용되게 합니다.
+        const wait = this.getIntervalMs() - (Date.now() - this.lastSentAt);
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
         const item = this.queue.shift();

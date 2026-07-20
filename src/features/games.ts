@@ -38,7 +38,8 @@ export class GameEngine {
     settings: GameSettings,
     points: PointSettings
   ): { error: string } | { bet: number } {
-    if (!settings.enabled) return { error: '' };
+    // 게임 전체가 꺼진 경우는 호출자가 먼저 걸러야 합니다.
+    // 여기서 "빈 오류" 같은 애매한 값을 돌려주면 호출자가 처리 여부를 헷갈립니다.
     if (!points.enabled) return { error: '포인트 기능이 꺼져 있어 게임을 할 수 없습니다.' };
 
     const held = this.users.get(channelId)?.points ?? 0;
@@ -81,7 +82,7 @@ export class GameEngine {
     if (!settings.gambleEnabled) return null;
 
     const checked = this.validate(channelId, betRaw, settings, points);
-    if ('error' in checked) return checked.error ? { message: checked.error, delta: 0 } : null;
+    if ('error' in checked) return { message: checked.error, delta: 0 };
     if (!this.start(channelId, checked.bet, settings)) return null;
 
     const unit = points.unitName;
@@ -113,7 +114,7 @@ export class GameEngine {
     if (!settings.diceEnabled) return null;
 
     const checked = this.validate(channelId, betRaw, settings, points);
-    if ('error' in checked) return checked.error ? { message: checked.error, delta: 0 } : null;
+    if ('error' in checked) return { message: checked.error, delta: 0 };
     if (!this.start(channelId, checked.bet, settings)) return null;
 
     const unit = points.unitName;
@@ -152,7 +153,7 @@ export class GameEngine {
     if (!settings.slotsEnabled) return null;
 
     const checked = this.validate(channelId, betRaw, settings, points);
-    if ('error' in checked) return checked.error ? { message: checked.error, delta: 0 } : null;
+    if ('error' in checked) return { message: checked.error, delta: 0 };
     if (!this.start(channelId, checked.bet, settings)) return null;
 
     const unit = points.unitName;

@@ -52,6 +52,29 @@ export class AudienceIndex {
     return this.subscriberDetail.get(channelId);
   }
 
+  /**
+   * SUBSCRIPTION 이벤트가 오면 즉시 반영합니다.
+   *
+   * 목록 갱신 주기(기본 10분)를 기다리면, 방금 구독한 사람이 구독자 전용 명령을
+   * 썼을 때 "구독자가 아니다" 라고 답하게 됩니다. 가장 티가 나는 순간이라
+   * 이벤트로 들어온 정보는 바로 넣어 둡니다.
+   */
+  noteSubscription(subscriber: {
+    channelId: string;
+    nickname: string;
+    month: number;
+    tierNo: number;
+  }): void {
+    this.subscriberIds.add(subscriber.channelId);
+    this.subscriberDetail.set(subscriber.channelId, {
+      channelId: subscriber.channelId,
+      channelName: subscriber.nickname,
+      month: subscriber.month,
+      tierNo: subscriber.tierNo,
+      createdDate: new Date().toISOString(),
+    });
+  }
+
   /** 필요하면 갱신합니다. 실패해도 이전 값을 계속 씁니다. */
   async refresh(force = false): Promise<void> {
     if (this.unavailable && !force) return;

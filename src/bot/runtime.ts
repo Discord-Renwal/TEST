@@ -19,6 +19,7 @@ import { ChannelContext, expandVariables, pickRandomVariant } from '../features/
 import { findBuiltin, BUILTIN_COMMANDS } from '../features/builtinCommands.js';
 import { isAdmin, isIgnored } from '../features/permissions.js';
 import type { Logger } from '../core/logger.js';
+import { ChzzkApiError } from '../core/errors.js';
 
 export interface BotStats {
   startedAt: number;
@@ -98,13 +99,14 @@ export class BotRuntime {
     this.log = chzzk.logger.child('runtime');
 
     this.sender = new ChatSender(chzzk.chat, {
-      intervalMs: config.snapshot().general.sendIntervalMs,
+      // 값이 아니라 함수를 넘겨, 대시보드에서 바꾼 간격이 재시작 없이 반영되게 합니다.
+      intervalMs: () => this.deps.config.snapshot().general.sendIntervalMs,
       logger: chzzk.logger,
     });
 
     this.timers = new TimerScheduler(
       () => this.deps.config.snapshot().timers,
-      (message) => this.reply(this.expandForTimer(message)),
+      (message) => this.sendOrThrow(this.expandForTimer(message)),
       { logger: chzzk.logger }
     );
   }
@@ -307,6 +309,10 @@ export class BotRuntime {
     bet: string | undefined,
     config: BotConfig
   ): GameResult | null | undefined {
+    // 게임이 꺼져 있으면 이 이름들을 아예 잡지 않습니다.
+    // 여기서 null(=처리됨) 을 돌려주면 같은 이름의 커스텀 명령이 영영 가려집니다.
+    if (!config.games.enabled) return undefined;
+
     const nickname = event.profile?.nickname ?? '';
     const id = event.senderChannelId;
 
@@ -356,6 +362,15 @@ export class BotRuntime {
 
   async handleSubscription(event: SubscriptionEvent): Promise<void> {
     const config = this.deps.config.snapshot();
+
+    // 구독자 전용 명령이 곧바로 통하도록, 목록 갱신을 기다리지 않고 반영합니다.
+    this.audience.noteSubscription({
+      channelId: event.subscriberChannelId,
+      nickname: event.subscriberNickname,
+      month: event.month,
+      tierNo: event.tierNo,
+    });
+
     this.points.onSubscription(
       event.subscriberChannelId,
       event.subscriberNickname,
@@ -453,13 +468,32 @@ export class BotRuntime {
     return all.length > 0 ? `사용 가능: ${all.join(' ')}` : '등록된 명령어가 없습니다.';
   }
 
+  /**
+   * 채팅 응답. 실패해도 이벤트 처리를 계속하기 위해 오류를 흡수합니다.
+   *
+   * 실패를 알아야 하는 호출자(주기 메시지 등)는 `sendOrThrow` 를 쓰세요.
+   * 예전에는 이쪽만 있어서, 전송이 400 으로 실패했는데도 스케줄러가 성공으로 보고
+   * "주기 메시지를 보냈습니다" 라는 거짓 로그를 남겼습니다.
+   */
   private async reply(message: string): Promise<void> {
-    if (!message.trim()) return;
     try {
-      await this.sender.send(message);
+      await this.sendOrThrow(message);
     } catch (error) {
       this.log.error('응답 전송에 실패했습니다.', error);
-      this.deps.log.push('error', '메시지 전송 실패', { detail: String(error) });
+      this.deps.log.push('error', '메시지 전송 실패', { detail: describeError(error) });
     }
   }
+
+  /** 실패를 그대로 던집니다. */
+  private async sendOrThrow(message: string): Promise<void> {
+    if (!message.trim()) return;
+    await this.sender.send(message);
+  }
+}
+
+/** 로그에 남길 짧은 사유 */
+function describeError(error: unknown): string {
+  if (error instanceof ChzzkApiError)
+    return error.message.split('—').pop()?.trim() ?? error.message;
+  return error instanceof Error ? error.message : String(error);
 }

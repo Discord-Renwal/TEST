@@ -413,3 +413,69 @@ describe('EventLog', () => {
     expect(log.recent(10, second.id).map((e) => e.message)).toEqual(['c']);
   });
 });
+
+// ─── 회귀 테스트 ──────────────────────────────────────────────────────────────
+
+describe('회귀: 게임이 꺼져 있을 때', () => {
+  it('베팅 검사가 게임 활성 여부를 스스로 판단하지 않는다', async () => {
+    // 예전에는 games.enabled 가 false 면 validate 가 "빈 오류" 를 돌려주고
+    // gamble() 이 null 을 반환했는데, 호출자는 null 을 "처리됨" 으로 읽어
+    // 같은 이름의 커스텀 명령(!도박 등)을 영영 가로챘다.
+    // 이제 활성 여부는 호출자가 판단하고, validate 는 항상 뜻이 분명한 값을 준다.
+    const users = await UserStore.open(join(dir, 'u.json'));
+    users.addPoints('u1', '길동', 1000);
+
+    const config = botConfig.parse({
+      points: { enabled: true },
+      games: { enabled: false, minBet: 10, maxBet: 1000, cooldownSec: 0 },
+    });
+
+    const engine = new GameEngine(users, () => 0);
+    const result = engine.gamble('u1', '길동', '100', config.games, config.points);
+
+    // 엔진 자체는 여전히 결과를 돌려줍니다. 끄고 켜는 판단은 런타임 몫입니다.
+    expect(result).not.toBeNull();
+    expect(result?.delta).toBe(100);
+  });
+
+  it('포인트가 꺼져 있으면 분명한 안내를 준다', async () => {
+    const users = await UserStore.open(join(dir, 'u.json'));
+    const config = botConfig.parse({
+      points: { enabled: false },
+      games: { enabled: true },
+    });
+
+    const result = new GameEngine(users, () => 0).gamble(
+      'u1',
+      '길동',
+      '100',
+      config.games,
+      config.points
+    );
+    expect(result?.message).toContain('포인트 기능이 꺼져');
+    expect(result?.delta).toBe(0);
+  });
+});
+
+describe('회귀: 구독 즉시 반영', () => {
+  it('SUBSCRIPTION 이벤트로 받은 사람은 목록 갱신 전에도 구독자로 인식된다', async () => {
+    const { AudienceIndex } = await import('../src/features/audienceIndex.js');
+    // 네트워크를 타지 않는 최소 스텁 — 갱신은 어차피 실패해도 됩니다.
+    const index = new AudienceIndex(
+      {
+        channels: {
+          get: () => Promise.reject(new Error('x')),
+          subscribers: () => Promise.reject(new Error('x')),
+        },
+      } as never,
+      'me'
+    );
+
+    expect(index.isSubscriber('newbie')).toBe(false);
+
+    index.noteSubscription({ channelId: 'newbie', nickname: '새구독자', month: 1, tierNo: 1 });
+
+    expect(index.isSubscriber('newbie')).toBe(true);
+    expect(index.subscriberOf('newbie')?.channelName).toBe('새구독자');
+  });
+});

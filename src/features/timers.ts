@@ -34,13 +34,25 @@ export class TimerScheduler {
 
   start(): void {
     if (this.ticker) return;
-    const now = Date.now();
     // 시작하자마자 쏟아지지 않도록 기준 시각을 지금으로 잡습니다.
-    for (const timer of this.getTimers()) this.lastFiredAt.set(timer.id, now);
+    this.sync();
 
     this.ticker = setInterval(() => void this.tick(), this.tickMs);
     this.ticker.unref?.();
     this.log.debug('주기 메시지 스케줄러를 시작했습니다.');
+  }
+
+  /**
+   * 타이머 하나의 상태를 준비합니다.
+   *
+   * 이걸 한 곳에 모은 이유: 예전에는 start() 가 `lastFiredAt` 만 채우고
+   * `chatSinceFire` 를 비워 뒀는데, noteChat() 은 이미 있는 항목만 세도록
+   * 되어 있어서 **시작 시점에 있던 타이머는 채팅 수가 영원히 0** 이었습니다.
+   * 기본값이 10줄이라 주기 메시지가 아예 발사되지 않았습니다.
+   */
+  private register(id: string, now: number): void {
+    if (!this.lastFiredAt.has(id)) this.lastFiredAt.set(id, now);
+    if (!this.chatSinceFire.has(id)) this.chatSinceFire.set(id, 0);
   }
 
   stop(): void {
@@ -49,9 +61,18 @@ export class TimerScheduler {
     this.ticker = undefined;
   }
 
-  /** 채팅이 올 때마다 호출해 주세요. 최소 채팅 수 조건에 씁니다. */
+  /**
+   * 채팅이 올 때마다 호출해 주세요. 최소 채팅 수 조건에 씁니다.
+   *
+   * 맵에 이미 있는 항목만 세지 않고 **현재 타이머 목록을 기준으로** 셉니다.
+   * 등록 순서에 따라 조용히 세지 않는 일이 없도록 하기 위해서입니다.
+   */
   noteChat(): void {
-    for (const [id, count] of this.chatSinceFire) this.chatSinceFire.set(id, count + 1);
+    const now = Date.now();
+    for (const timer of this.getTimers()) {
+      this.register(timer.id, now);
+      this.chatSinceFire.set(timer.id, (this.chatSinceFire.get(timer.id) ?? 0) + 1);
+    }
   }
 
   /** 다음 발사까지 남은 초 (대시보드 표시용). 조건 미달이면 null */
@@ -69,10 +90,11 @@ export class TimerScheduler {
     for (const timer of this.getTimers()) {
       if (!timer.enabled) continue;
 
-      // 새로 추가된 타이머는 이번 tick 을 기준으로 시작합니다.
+      // 아직 모르는 타이머면 이번 tick 을 기준으로 시작합니다.
+      // 이미 세어 둔 채팅 수는 지우지 않습니다 — 지우면 대시보드에서 방금 만든
+      // 타이머가 다음 tick 에 카운트를 잃습니다.
       if (!this.lastFiredAt.has(timer.id)) {
-        this.lastFiredAt.set(timer.id, now);
-        this.chatSinceFire.set(timer.id, 0);
+        this.register(timer.id, now);
         continue;
       }
 
@@ -100,17 +122,17 @@ export class TimerScheduler {
     }
   }
 
-  /** 타이머가 추가/삭제됐을 때 내부 상태를 정리합니다. */
+  /** 타이머가 추가/삭제됐을 때 내부 상태를 맞춥니다. */
   sync(): void {
+    const now = Date.now();
     const ids = new Set(this.getTimers().map((t) => t.id));
-    for (const id of this.lastFiredAt.keys()) {
+
+    for (const id of [...this.lastFiredAt.keys()]) {
       if (!ids.has(id)) {
         this.lastFiredAt.delete(id);
         this.chatSinceFire.delete(id);
       }
     }
-    for (const id of ids) {
-      if (!this.chatSinceFire.has(id)) this.chatSinceFire.set(id, 0);
-    }
+    for (const id of ids) this.register(id, now);
   }
 }
