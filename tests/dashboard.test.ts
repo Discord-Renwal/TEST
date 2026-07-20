@@ -126,7 +126,7 @@ describe('설정 저장', () => {
   it('허용 범위를 벗어난 값은 400', async () => {
     const res = await req('/config/general', 'PUT', { sendIntervalMs: 10 });
     expect(res.status).toBe(400);
-    expect(store.snapshot().general.sendIntervalMs).toBe(1200);
+    expect(store.snapshot().general.sendIntervalMs).toBe(2000);
   });
 
   it('moderation 저장이 금칙어 목록을 지우지 않는다', async () => {
@@ -142,7 +142,7 @@ describe('설정 저장', () => {
     await req('/config/general', 'PUT', { prefix: '?' });
     const config = store.snapshot();
     expect(config.general.prefix).toBe('?');
-    expect(config.general.sendIntervalMs).toBe(1200);
+    expect(config.general.sendIntervalMs).toBe(2000);
   });
 });
 

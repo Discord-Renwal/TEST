@@ -118,6 +118,46 @@ export const bannedWord = z.object({
 });
 export type BannedWord = z.infer<typeof bannedWord>;
 
+/**
+ * 스팸 필터.
+ *
+ * 영어권 봇의 "대문자 비율" 필터는 한글에 의미가 없어서 넣지 않았습니다.
+ * 대신 한국 채팅에서 실제로 문제가 되는 자음 연타(ㅋㅋㅋㅋ…), 같은 말 반복,
+ * 링크 도배를 기준으로 잡았습니다.
+ */
+export const spamSettings = z.object({
+  enabled: z.boolean().default(false),
+
+  /** 같은 문자가 연속으로 이만큼 넘게 나오면 도배로 봅니다. 0 이면 검사 안 함. */
+  maxRepeatedChars: z.number().int().min(0).max(100).default(0),
+  /** 메시지 최대 길이. 0 이면 제한 없음. */
+  maxLength: z.number().int().min(0).max(1000).default(0),
+  /** 같은 사람이 이 시간(초) 안에 똑같은 메시지를 또 보내면 차단. 0 이면 검사 안 함. */
+  duplicateWindowSec: z.number().int().min(0).max(600).default(0),
+  /** 한 메시지에 허용할 이모티콘 개수. 0 이면 제한 없음. */
+  maxEmojis: z.number().int().min(0).max(100).default(0),
+
+  /** 링크 차단 */
+  blockLinks: z.boolean().default(false),
+  /** 링크를 허용할 도메인 (예: youtube.com) */
+  allowedDomains: z.array(z.string()).default([]),
+
+  /** 이 역할들은 스팸 검사에서 제외됩니다. */
+  exemptRoles: z
+    .array(userRoleCode)
+    .default(['streamer', 'streaming_channel_manager', 'streaming_chat_manager']),
+
+  /**
+   * 단계적 제재. 위반 횟수에 따라 조치가 세집니다.
+   * 위반 기록은 아래 시간(분)이 지나면 사라집니다.
+   */
+  escalate: z.boolean().default(true),
+  violationDecayMinutes: z.number().int().min(1).max(1440).default(30),
+  /** 몇 번째 위반부터 임시 제한을 걸지 (allowTempBan 이 켜져 있어야 실제로 실행) */
+  tempBanAfterViolations: z.number().int().min(2).max(20).default(3),
+});
+export type SpamSettings = z.infer<typeof spamSettings>;
+
 export const moderationSettings = z.object({
   enabled: z.boolean().default(true),
   /** 이 역할들은 금칙어 검사를 건너뜁니다. */
@@ -127,6 +167,7 @@ export const moderationSettings = z.object({
   /** 임시 제한 조치를 실제로 실행할지. 꺼두면 숨기기까지만 합니다. */
   allowTempBan: z.boolean().default(false),
   words: z.array(bannedWord).default([]),
+  spam: spamSettings.default({}),
 });
 export type ModerationSettings = z.infer<typeof moderationSettings>;
 
@@ -142,14 +183,139 @@ export const permissionSettings = z.object({
 });
 export type PermissionSettings = z.infer<typeof permissionSettings>;
 
+// ─── 주기 메시지 ──────────────────────────────────────────────────────────────
+
+export const timerMessage = z.object({
+  id: z.string(),
+  label: z.string().max(50).default(''),
+  message: z.string().min(1).max(300),
+  /** 발사 간격(분) */
+  intervalMinutes: z.number().int().min(1).max(1440).default(15),
+  /**
+   * 지난 발사 이후 이만큼 채팅이 오가야 다시 보냅니다.
+   * 0 이면 조건 없이 시간만 보고 보냅니다 — 빈 방송에 봇 혼자 떠드는 걸 막는 장치입니다.
+   */
+  minChatsSinceLast: z.number().int().min(0).max(500).default(10),
+  enabled: z.boolean().default(true),
+});
+export type TimerMessage = z.infer<typeof timerMessage>;
+
+// ─── 포인트 ───────────────────────────────────────────────────────────────────
+
+export const attendanceSettings = z.object({
+  enabled: z.boolean().default(true),
+  /** 출석 기본 보상 */
+  reward: z.number().int().min(0).max(100_000).default(100),
+  /** 연속 출석 하루당 추가 보상 */
+  streakBonus: z.number().int().min(0).max(10_000).default(20),
+  /** 연속 보너스 상한 */
+  maxStreakBonus: z.number().int().min(0).max(100_000).default(200),
+});
+
+export const pointSettings = z.object({
+  enabled: z.boolean().default(true),
+  /** 포인트의 표시 이름. 채널마다 "젤리", "코인" 등으로 부릅니다. */
+  unitName: z.string().min(1).max(10).default('포인트'),
+  /** 채팅 1회당 적립량 */
+  perChat: z.number().int().min(0).max(10_000).default(10),
+  /** 같은 사람의 연속 채팅에 중복 적립되지 않도록 하는 간격(초) */
+  chatCooldownSec: z.number().int().min(0).max(3600).default(60),
+  /** 후원 1000원당 적립량 */
+  perThousandWon: z.number().int().min(0).max(100_000).default(100),
+  /** 구독 1개월당 적립량 */
+  perSubscriptionMonth: z.number().int().min(0).max(100_000).default(500),
+  attendance: attendanceSettings.default({}),
+});
+export type PointSettings = z.infer<typeof pointSettings>;
+
+// ─── 신청곡 ───────────────────────────────────────────────────────────────────
+
+export const songSettings = z.object({
+  enabled: z.boolean().default(false),
+  /** 한 사람이 대기열에 동시에 올릴 수 있는 곡 수 */
+  maxPerUser: z.number().int().min(1).max(20).default(2),
+  /** 대기열 전체 상한 */
+  maxQueueSize: z.number().int().min(1).max(200).default(30),
+  /** 신청에 드는 포인트. 0 이면 무료 */
+  cost: z.number().int().min(0).max(1_000_000).default(0),
+  /** 이미 대기 중인 곡과 같은 제목을 허용할지 */
+  allowDuplicate: z.boolean().default(false),
+  /** 신청할 수 있는 역할 */
+  allowedRoles: z
+    .array(userRoleCode)
+    .default(['streamer', 'streaming_channel_manager', 'streaming_chat_manager', 'common_user']),
+});
+export type SongSettings = z.infer<typeof songSettings>;
+
+// ─── 미니게임 ─────────────────────────────────────────────────────────────────
+
+/**
+ * 포인트를 거는 게임.
+ *
+ * 포인트가 쌓이기만 하고 쓸 데가 없으면 아무도 신경 쓰지 않습니다.
+ * 소모처를 만들어 순환을 주는 게 목적이라, 기대값은 1보다 살짝 낮게 잡았습니다.
+ */
+export const gameSettings = z.object({
+  enabled: z.boolean().default(false),
+  /** 최소/최대 베팅. 최대는 한 번에 전 재산을 날리는 걸 막습니다. */
+  minBet: z.number().int().min(1).max(1_000_000).default(10),
+  maxBet: z.number().int().min(1).max(10_000_000).default(1000),
+  /** 같은 사람의 게임 간격(초) */
+  cooldownSec: z.number().int().min(0).max(3600).default(30),
+
+  /** !도박 — 이길 확률(%). 이기면 베팅액만큼 벌고, 지면 잃습니다. */
+  gambleEnabled: z.boolean().default(true),
+  gambleWinPercent: z.number().int().min(1).max(99).default(45),
+
+  /** !주사위 — 봇과 주사위를 굴려 높은 쪽이 이깁니다. 무승부는 베팅액 반환. */
+  diceEnabled: z.boolean().default(true),
+
+  /** !슬롯 — 3개가 같으면 대박, 2개가 같으면 소액. */
+  slotsEnabled: z.boolean().default(true),
+  /** 3개 일치 배율 */
+  slotsJackpotMultiplier: z.number().int().min(2).max(100).default(10),
+  /** 2개 일치 배율 */
+  slotsPairMultiplier: z.number().int().min(1).max(20).default(2),
+});
+export type GameSettings = z.infer<typeof gameSettings>;
+
+// ─── 인사 / 알림 ──────────────────────────────────────────────────────────────
+
+export const greetingSettings = z.object({
+  enabled: z.boolean().default(false),
+  /** 이 채널에서 처음 채팅한 사람에게 */
+  firstTimeMessage: z.string().max(300).default('{user}님 처음 오셨네요, 환영합니다!'),
+});
+
+export const notificationSettings = z.object({
+  donationEnabled: z.boolean().default(true),
+  /** 치환자: {user} {amount} {message} */
+  donationMessage: z.string().max(300).default('{user}님, {amount}원 후원 감사합니다!'),
+  /** 이 금액 미만은 알리지 않습니다. 소액 도배 방지. */
+  donationMinAmount: z.number().int().min(0).default(0),
+
+  subscriptionEnabled: z.boolean().default(true),
+  /** 치환자: {user} {month} {tier} */
+  subscriptionMessage: z.string().max(300).default('{user}님, {month}개월 구독 감사합니다!'),
+
+  greeting: greetingSettings.default({}),
+});
+export type NotificationSettings = z.infer<typeof notificationSettings>;
+
 // ─── 전체 설정 ────────────────────────────────────────────────────────────────
 
 export const generalSettings = z.object({
   /** 봇 전체 on/off. 끄면 어떤 응답도 보내지 않습니다. */
   enabled: z.boolean().default(true),
   prefix: z.string().min(1).max(5).default('!'),
-  /** 메시지 사이 최소 간격(ms). 429 를 피하기 위한 값. */
-  sendIntervalMs: z.number().int().min(300).max(10_000).default(1200),
+  /**
+   * 메시지 사이 최소 간격(ms).
+   *
+   * 공식 문서에 쿼터 수치가 없지만, 커뮤니티에서 확인된 값은 **분당 30요청**입니다.
+   * 기본값 2000ms 는 분당 30회에 해당합니다. 더 낮추면 429 와 봇 계정 스팸 제재
+   * 위험이 있으니, 줄이려면 실제 반응을 보면서 조금씩 내리세요.
+   */
+  sendIntervalMs: z.number().int().min(500).max(10_000).default(2000),
   /** 알 수 없는 명령어에 "그런 명령 없습니다" 라고 답할지 */
   replyOnUnknownCommand: z.boolean().default(false),
 });
@@ -162,6 +328,11 @@ export const botConfig = z.object({
   moderation: moderationSettings.default({}),
   commands: z.array(customCommand).default([]),
   autoResponses: z.array(autoResponse).default([]),
+  timers: z.array(timerMessage).default([]),
+  points: pointSettings.default({}),
+  songs: songSettings.default({}),
+  games: gameSettings.default({}),
+  notifications: notificationSettings.default({}),
 });
 export type BotConfig = z.infer<typeof botConfig>;
 

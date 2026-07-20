@@ -9,9 +9,15 @@ export {
   customCommand,
   autoResponse,
   bannedWord,
+  timerMessage,
   generalSettings,
   permissionSettings,
   moderationSettings,
+  spamSettings,
+  pointSettings,
+  songSettings,
+  gameSettings,
+  notificationSettings,
   ROLE_LABELS,
 } from '../../../src/store/schema';
 
@@ -20,9 +26,15 @@ export type {
   CustomCommand,
   AutoResponse,
   BannedWord,
+  TimerMessage,
   CommandType,
   MatchMode,
   ModerationAction,
+  SpamSettings,
+  PointSettings,
+  SongSettings,
+  GameSettings,
+  NotificationSettings,
   UserRoleCodeValue,
 } from '../../../src/store/schema';
 
@@ -32,7 +44,59 @@ export interface BotStats {
   commandsRun: number;
   autoResponsesSent: number;
   moderationActions: number;
+  spamBlocked: number;
+  pointsAwarded: number;
   lastChatAt: number | null;
+  uniqueChatters: number;
+}
+
+export interface UserRecord {
+  channelId: string;
+  nickname: string;
+  points: number;
+  chatCount: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  attendanceStreak: number;
+  lastAttendanceDate: string;
+}
+
+export interface SongRequest {
+  id: string;
+  title: string;
+  requesterChannelId: string;
+  requesterNickname: string;
+  status: 'queued' | 'playing' | 'done' | 'skipped';
+  requestedAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  pointsSpent: number;
+}
+
+export interface SongsResponse {
+  playing: SongRequest | null;
+  pending: SongRequest[];
+  history: SongRequest[];
+}
+
+export type LogKind =
+  | 'chat'
+  | 'command'
+  | 'auto'
+  | 'moderation'
+  | 'donation'
+  | 'subscription'
+  | 'song'
+  | 'system'
+  | 'error';
+
+export interface LogEntry {
+  id: number;
+  at: number;
+  kind: LogKind;
+  actor?: string;
+  message: string;
+  detail?: string;
 }
 
 export interface StatusResponse {

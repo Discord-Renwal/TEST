@@ -4,12 +4,18 @@ import { Layout, type TabId } from './components/Layout';
 import { EmptyState } from './components/ui/Card';
 import { Button } from './components/ui/Button';
 import { GeneralPage } from './pages/GeneralPage';
+import { EventsPage } from './pages/EventsPage';
 import { CommandsPage } from './pages/CommandsPage';
 import { AutoResponsesPage } from './pages/AutoResponsesPage';
+import { TimersPage } from './pages/TimersPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { PointsPage } from './pages/PointsPage';
+import { GamesPage } from './pages/GamesPage';
+import { SongsPage } from './pages/SongsPage';
 import { BannedWordsPage } from './pages/BannedWordsPage';
 import { PermissionsPage } from './pages/PermissionsPage';
-import { ComingSoonPage } from './pages/ComingSoonPage';
 import { useConfig, useStatus } from './lib/api';
+import type { BotConfig, BotStats } from './lib/types';
 
 export function App() {
   const [tab, setTab] = useState<TabId>('general');
@@ -44,29 +50,29 @@ export function App() {
   );
 }
 
-function Pages({
-  tab,
-  config,
-  stats,
-}: {
-  tab: TabId;
-  config: NonNullable<ReturnType<typeof useConfig>['data']>;
-  stats: NonNullable<ReturnType<typeof useStatus>['data']>['stats'];
-}) {
+function Pages({ tab, config, stats }: { tab: TabId; config: BotConfig; stats: BotStats | null }) {
   switch (tab) {
     case 'general':
       return <GeneralPage config={config} stats={stats} />;
+    case 'events':
+      return <EventsPage />;
     case 'commands':
       return <CommandsPage config={config} />;
     case 'auto':
       return <AutoResponsesPage config={config} />;
+    case 'timers':
+      return <TimersPage config={config} />;
+    case 'notifications':
+      return <NotificationsPage config={config} />;
+    case 'points':
+      return <PointsPage config={config} />;
+    case 'games':
+      return <GamesPage config={config} />;
+    case 'songs':
+      return <SongsPage config={config} />;
     case 'banned':
       return <BannedWordsPage config={config} />;
     case 'permissions':
       return <PermissionsPage config={config} />;
-    case 'songs':
-      return <ComingSoonPage kind="songs" />;
-    case 'points':
-      return <ComingSoonPage kind="points" />;
   }
 }

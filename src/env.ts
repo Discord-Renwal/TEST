@@ -8,6 +8,8 @@ const schema = z.object({
   CHZZK_LOGIN_PORT: z.coerce.number().int().positive().default(3000),
   CHZZK_TOKEN_FILE: z.string().default('.tokens/chzzk.json'),
   BOT_CONFIG_FILE: z.string().default('data/config.json'),
+  BOT_USER_FILE: z.string().default('data/users.json'),
+  BOT_SONG_FILE: z.string().default('data/songs.json'),
   DASHBOARD_PORT: z.coerce.number().int().positive().default(4700),
   BOT_COMMAND_PREFIX: z.string().default('!'),
   LOG_LEVEL: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),

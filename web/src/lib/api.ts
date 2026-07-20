@@ -5,7 +5,17 @@ import {
   type UseMutationResult,
 } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { AutoResponse, BannedWord, BotConfig, CustomCommand, StatusResponse } from './types';
+import type {
+  AutoResponse,
+  BannedWord,
+  BotConfig,
+  CustomCommand,
+  LogEntry,
+  SongsResponse,
+  StatusResponse,
+  TimerMessage,
+  UserRecord,
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -80,7 +90,11 @@ function useConfigMutation<TVars>(
 
 // ─── 설정 섹션 ────────────────────────────────────────────────────────────────
 
-export function useSaveSection(section: 'general' | 'permissions' | 'moderation') {
+/** 서버의 부분 저장 엔드포인트와 같은 목록이어야 합니다. */
+export type ConfigSection =
+  'general' | 'permissions' | 'moderation' | 'points' | 'songs' | 'games' | 'notifications';
+
+export function useSaveSection(section: ConfigSection) {
   return useConfigMutation(
     (values: Record<string, unknown>) => request(`/config/${section}`, 'PUT', values),
     '저장했습니다.'
@@ -154,4 +168,119 @@ export function useDeleteBannedWord() {
     (id: string) => request(`/banned-words/${id}`, 'DELETE'),
     '삭제했습니다.'
   );
+}
+
+// ─── 주기 메시지 ──────────────────────────────────────────────────────────────
+
+export function useCreateTimer() {
+  return useConfigMutation(
+    (values: Partial<TimerMessage>) => request<TimerMessage>('/timers', 'POST', values),
+    '주기 메시지를 추가했습니다.'
+  );
+}
+
+export function useUpdateTimer() {
+  return useConfigMutation(
+    ({ id, ...values }: Partial<TimerMessage> & { id: string }) =>
+      request<TimerMessage>(`/timers/${id}`, 'PUT', values),
+    '저장했습니다.'
+  );
+}
+
+export function useDeleteTimer() {
+  return useConfigMutation((id: string) => request(`/timers/${id}`, 'DELETE'), '삭제했습니다.');
+}
+
+// ─── 시청자 / 포인트 ─────────────────────────────────────────────────────────
+
+export const USERS_KEY = ['users'] as const;
+export const SONGS_KEY = ['songs'] as const;
+export const EVENTS_KEY = ['events'] as const;
+
+export function useUsers() {
+  return useQuery({
+    queryKey: USERS_KEY,
+    queryFn: () => request<{ users: UserRecord[]; total: number }>('/users'),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
+
+/** 포인트 지급/회수는 설정이 아니라 사용자 데이터라 별도 캐시를 무효화합니다. */
+function useUserMutation<TVars>(fn: (vars: TVars) => Promise<unknown>, message: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: USERS_KEY });
+      toast.success(message);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useGrantPoints() {
+  return useUserMutation(
+    ({ channelId, delta }: { channelId: string; delta: number }) =>
+      request(`/users/${channelId}/points`, 'POST', { delta }),
+    '반영했습니다.'
+  );
+}
+
+export function useResetPoints() {
+  return useUserMutation(() => request('/users/reset-points', 'POST'), '포인트를 초기화했습니다.');
+}
+
+// ─── 신청곡 ──────────────────────────────────────────────────────────────────
+
+export function useSongs() {
+  return useQuery({
+    queryKey: SONGS_KEY,
+    queryFn: () => request<SongsResponse>('/songs'),
+    refetchInterval: 8000,
+    retry: false,
+  });
+}
+
+function useSongMutation<TVars>(fn: (vars: TVars) => Promise<unknown>, message: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: SONGS_KEY });
+      toast.success(message);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useNextSong() {
+  return useSongMutation(() => request('/songs/next', 'POST'), '다음 곡으로 넘겼습니다.');
+}
+
+export function useClearSongs() {
+  return useSongMutation(() => request('/songs/clear', 'POST'), '대기열을 비웠습니다.');
+}
+
+export function useMoveSong() {
+  return useSongMutation(
+    ({ id, direction }: { id: string; direction: 'up' | 'down' }) =>
+      request(`/songs/${id}/${direction}`, 'POST'),
+    '순서를 바꿨습니다.'
+  );
+}
+
+export function useRemoveSong() {
+  return useSongMutation((id: string) => request(`/songs/${id}`, 'DELETE'), '삭제했습니다.');
+}
+
+// ─── 이벤트 로그 ─────────────────────────────────────────────────────────────
+
+export function useEvents() {
+  return useQuery({
+    queryKey: EVENTS_KEY,
+    queryFn: () => request<{ events: LogEntry[]; lastId: number }>('/events'),
+    refetchInterval: 3000,
+    retry: false,
+  });
 }

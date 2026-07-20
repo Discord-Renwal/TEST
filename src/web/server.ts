@@ -1,11 +1,21 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { extname, join, normalize, resolve } from 'node:path';
 import type { ConfigStore } from '../store/configStore.js';
 import type { BotRuntime } from '../bot/runtime.js';
 import type { Logger } from '../core/logger.js';
-import { autoResponse, bannedWord, botConfig, customCommand } from '../store/schema.js';
+import {
+  autoResponse,
+  bannedWord,
+  botConfig,
+  customCommand,
+  timerMessage,
+} from '../store/schema.js';
 import { isValidPattern } from '../features/matcher.js';
+import type { UserStore } from '../store/userStore.js';
+import type { SongQueueStore } from '../store/songQueue.js';
+import type { EventLog } from '../store/eventLog.js';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -36,14 +46,21 @@ API 는 정상 동작 중이므로 봇 자체는 영향을 받지 않습니다.<
 
 export interface DashboardOptions {
   store: ConfigStore;
+  users?: UserStore | undefined;
+  songs?: SongQueueStore | undefined;
+  eventLog?: EventLog | undefined;
   runtime?: BotRuntime | undefined;
   logger: Logger;
   port?: number;
-  /** 정적 파일 경로. 기본은 저장소의 src/web/public */
+  /** 정적 파일 경로. 기본은 web/dist */
   publicDir?: string;
   /** 봇 계정 정보 — 상태 화면에 보여줍니다. */
   account?: { channelId: string; channelName: string } | undefined;
 }
+
+/** 부분 저장이 가능한 설정 섹션 — 위 경로 정규식과 반드시 같은 목록이어야 합니다. */
+type ConfigSection =
+  'general' | 'permissions' | 'moderation' | 'points' | 'songs' | 'games' | 'notifications';
 
 /**
  * 설정 대시보드.
@@ -98,12 +115,16 @@ export function createDashboard(options: DashboardOptions) {
       }
     }
 
-    // 부분 설정 저장 (general / permissions / moderation 탭)
-    const sectionMatch = /^\/api\/config\/(general|permissions|moderation)$/.exec(path);
+    // 부분 설정 저장
+    const sectionMatch =
+      /^\/api\/config\/(general|permissions|moderation|points|songs|games|notifications)$/.exec(
+        path
+      );
     if (sectionMatch && method === 'PUT') {
-      const section = sectionMatch[1] as 'general' | 'permissions' | 'moderation';
+      const section = sectionMatch[1] as ConfigSection;
       const body = await readJson(req);
       const draft = store.snapshot();
+
       // 금칙어 목록은 별도 엔드포인트로 관리하므로 덮어쓰지 않습니다.
       const merged =
         section === 'moderation'
@@ -113,6 +134,160 @@ export function createDashboard(options: DashboardOptions) {
       const parsed = botConfig.safeParse({ ...draft, [section]: merged });
       if (!parsed.success) return sendJson(res, 400, { error: formatIssues(parsed.error.issues) });
       return sendJson(res, 200, await store.replace(parsed.data));
+    }
+
+    // ─ 타이머(주기 메시지)
+    if (path === '/api/timers' && method === 'POST') {
+      const body = await readJson(req);
+      const parsed = timerMessage.omit({ id: true }).safeParse(body);
+      if (!parsed.success) return sendJson(res, 400, { error: formatIssues(parsed.error.issues) });
+
+      const saved = timerMessage.parse({ ...parsed.data, id: `tm_${randomUUID().slice(0, 8)}` });
+      await store.update((draft) => {
+        draft.timers.push(saved);
+      });
+      return sendJson(res, 200, saved);
+    }
+
+    const timerMatch = /^\/api\/timers\/([\w-]+)$/.exec(path);
+    if (timerMatch) {
+      const id = timerMatch[1]!;
+      if (method === 'PUT') {
+        const body = await readJson(req);
+        const existing = store.snapshot().timers.find((t) => t.id === id);
+        if (!existing) return sendJson(res, 404, { error: '주기 메시지를 찾을 수 없습니다.' });
+
+        const parsed = timerMessage.safeParse({ ...existing, ...(body as object), id });
+        if (!parsed.success)
+          return sendJson(res, 400, { error: formatIssues(parsed.error.issues) });
+
+        await store.update((draft) => {
+          const index = draft.timers.findIndex((t) => t.id === id);
+          if (index >= 0) draft.timers[index] = parsed.data;
+        });
+        return sendJson(res, 200, parsed.data);
+      }
+      if (method === 'DELETE') {
+        let removed = false;
+        await store.update((draft) => {
+          const before = draft.timers.length;
+          draft.timers = draft.timers.filter((t) => t.id !== id);
+          removed = draft.timers.length < before;
+        });
+        return sendJson(
+          res,
+          removed ? 200 : 404,
+          removed ? { ok: true } : { error: '없는 항목입니다.' }
+        );
+      }
+    }
+
+    // ─ 시청자 / 포인트
+    if (path === '/api/users' && method === 'GET') {
+      if (!options.users) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const list = options.users
+        .all()
+        .sort((a, b) => b.points - a.points)
+        .slice(0, 200);
+      return sendJson(res, 200, { users: list, total: options.users.userCount });
+    }
+
+    const userPointMatch = /^\/api\/users\/([\w-]+)\/points$/.exec(path);
+    if (userPointMatch && method === 'POST') {
+      if (!options.users) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const body = (await readJson(req)) as { delta?: unknown };
+      const delta = Number(body.delta);
+      if (!Number.isFinite(delta) || delta === 0) {
+        return sendJson(res, 400, { error: 'delta 는 0 이 아닌 숫자여야 합니다.' });
+      }
+      const channelId = userPointMatch[1]!;
+      const existing = options.users.get(channelId);
+      const total = options.users.addPoints(channelId, existing?.nickname ?? '', Math.floor(delta));
+      return sendJson(res, 200, { channelId, points: total });
+    }
+
+    if (path === '/api/users/reset-points' && method === 'POST') {
+      if (!options.users) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      options.users.resetAllPoints();
+      await options.users.flush();
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // ─ 신청곡
+    if (path === '/api/songs' && method === 'GET') {
+      if (!options.songs) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      return sendJson(res, 200, {
+        playing: options.songs.playing() ?? null,
+        pending: options.songs.pending(),
+        history: options.songs
+          .all()
+          .filter((s) => s.status === 'done' || s.status === 'skipped')
+          .slice(-20)
+          .reverse(),
+      });
+    }
+
+    if (path === '/api/songs/next' && method === 'POST') {
+      if (!options.songs) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const started = options.songs.next();
+      await options.songs.flush();
+      return sendJson(res, 200, { started });
+    }
+
+    if (path === '/api/songs/clear' && method === 'POST') {
+      if (!options.songs) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const count = options.songs.clearPending();
+      await options.songs.flush();
+      return sendJson(res, 200, { cleared: count });
+    }
+
+    const songMatch = /^\/api\/songs\/([\w-]+)(?:\/(up|down|skip))?$/.exec(path);
+    if (songMatch && !['next', 'clear'].includes(songMatch[1]!)) {
+      if (!options.songs) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const id = songMatch[1]!;
+      const action = songMatch[2];
+
+      if (method === 'POST' && (action === 'up' || action === 'down')) {
+        const moved = options.songs.move(id, action);
+        await options.songs.flush();
+        return sendJson(
+          res,
+          moved ? 200 : 404,
+          moved ? { ok: true } : { error: '옮기지 못했습니다.' }
+        );
+      }
+      if (method === 'POST' && action === 'skip') {
+        const skipped = options.songs.skip(id);
+        await options.songs.flush();
+        return sendJson(
+          res,
+          skipped ? 200 : 404,
+          skipped ? { skipped } : { error: '없는 곡입니다.' }
+        );
+      }
+      if (method === 'DELETE') {
+        const removed = options.songs.remove(id);
+        await options.songs.flush();
+        return sendJson(
+          res,
+          removed ? 200 : 404,
+          removed ? { ok: true } : { error: '없는 곡입니다.' }
+        );
+      }
+    }
+
+    // ─ 이벤트 로그
+    if (path === '/api/events' && method === 'GET') {
+      if (!options.eventLog) return sendJson(res, 200, { events: [], lastId: 0 });
+      const url = new URL(
+        path + (req.url?.split('?')[1] ? `?${req.url.split('?')[1]}` : ''),
+        'http://x'
+      );
+      const since = Number(url.searchParams.get('since') ?? 0);
+      return sendJson(res, 200, {
+        events: options.eventLog.recent(120, Number.isFinite(since) ? since : 0),
+        lastId: options.eventLog.lastId,
+      });
     }
 
     // ─ 명령어
