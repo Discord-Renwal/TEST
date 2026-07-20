@@ -1,0 +1,10 @@
+# 자동 생성 — 손대지 않습니다
+pnpm-lock.yaml
+node_modules/
+dist/
+web/dist/
+coverage/
+
+# 런타임 데이터 (설정·포인트·신청곡)
+data/
+.tokens/

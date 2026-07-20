@@ -37,3 +37,6 @@ data/
 
 # React 대시보드 빌드 산출물
 web/dist/
+
+# 커버리지 리포트
+coverage/

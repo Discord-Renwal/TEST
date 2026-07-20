@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 취약점은 코드를 안 건드려도 새로 생기므로 주기적으로도 돌립니다.
+  schedule:
+    - cron: '0 0 * * 1'
+
+# 같은 브랜치에 연달아 푸시하면 이전 실행은 취소합니다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 검증 (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json 의 engines 는 >=20.11 입니다. LTS 두 개와 현재 버전을 봅니다.
+        node: [20, 22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # packageManager 필드에 적힌 버전을 그대로 씁니다.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: 의존성 설치
+        run: pnpm install --frozen-lockfile
+
+      - name: 타입 검사 (서버 + 웹)
+        run: pnpm run typecheck
+
+      - name: 린트
+        run: pnpm run lint
+
+      - name: 포맷 확인
+        run: pnpm run format:check
+
+      - name: 테스트
+        run: pnpm run test:coverage
+
+      - name: 빌드 (대시보드 + 서버)
+        run: pnpm run build
+
+      # 커버리지 리포트는 최신 Node 실행분 하나만 남깁니다.
+      - name: 커버리지 업로드
+        if: matrix.node == 24
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  audit:
+    name: 취약점 점검
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # high 이상에서만 실패시킵니다.
+      #
+      # moderate 하나가 남아 있는데 고칠 수 없습니다: socket.io-client 2.5.0 이
+      # 끌고 오는 parseuri 의 ReDoS 입니다. 치지직 세션 API 는 socket.io 프로토콜을
+      # 2.0.3 까지만 지원해서 상위 버전으로 올리면 연결 자체가 안 됩니다.
+      # 파싱 대상은 치지직이 발급한 세션 URL 이라 외부 입력이 아닙니다.
+      - name: pnpm audit
+        run: pnpm audit --audit-level high

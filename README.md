@@ -355,6 +355,45 @@ pnpm build        # dist/ 로 컴파일
 `strict` 에 더해 `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
 `verbatimModuleSyntax` 까지 켜 둔 상태입니다.
 
+### CI
+
+`main` 푸시와 모든 PR 에서 GitHub Actions 가 돕니다. 매주 월요일에도 한 번
+돌아서, 코드를 안 건드려도 새로 생기는 취약점을 잡습니다.
+
+| 작업        | 내용                                                                      |
+| ----------- | ------------------------------------------------------------------------- |
+| 검증        | Node 20 · 22 · 24 에서 typecheck → lint → format → test(커버리지) → build |
+| 취약점 점검 | `pnpm audit --audit-level high`                                           |
+| CodeQL      | 보안 + 품질 규칙 정적 분석                                                |
+
+로컬에서 CI 와 같은 것을 돌리려면:
+
+```bash
+pnpm check          # typecheck + lint + format:check + test
+pnpm test:coverage  # 커버리지 임계값까지 확인
+pnpm audit          # high 이상 취약점
+```
+
+커버리지 임계값은 **목표가 아니라 후퇴 방지선**입니다. 현재 42% 를 바닥으로
+고정해 뒀습니다. `api`/`auth`/`session` 은 대부분 네트워크 호출 래퍼라 단위
+테스트가 큰 의미가 없어 실제 계정으로 확인했고, 로직이 들어 있는
+`store`/`features`/`core` 는 70~80% 대입니다.
+
+### 남아 있는 취약점 하나
+
+`pnpm audit` 은 moderate 1건을 계속 보고합니다. **고칠 수 없고, 고치면 안 됩니다.**
+
+```
+parseuri ReDoS  ←  socket.io-client@2.5.0  ←  치지직 세션 API
+```
+
+치지직 문서가 socket.io 프로토콜을 **2.0.3 까지만** 지원한다고 못박고 있어,
+상위 버전으로 올리면 핸드셰이크가 실패해 채팅을 아예 받지 못합니다. 그래서
+Dependabot 에서도 이 패키지를 갱신 대상에서 제외했습니다.
+
+노출 위험은 낮습니다 — 파싱 대상이 사용자 입력이 아니라 **치지직이 발급한
+세션 URL** 입니다. CI 는 high 이상에서만 실패하도록 해 두었습니다.
+
 ### pnpm 이 `Cannot find module '../dist/pnpm.cjs'` 로 죽는다면
 
 전역 pnpm 설치가 깨진 경우입니다. `package.json` 에 `packageManager: pnpm@9.15.0` 을

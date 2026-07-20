@@ -1,0 +1,42 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # 잔 업데이트가 PR 을 뒤덮지 않도록 묶습니다.
+    groups:
+      dev-tooling:
+        patterns:
+          - '@types/*'
+          - 'eslint*'
+          - 'typescript*'
+          - 'prettier'
+          - 'vitest'
+          - '@vitest/*'
+          - 'tsx'
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+          - '@radix-ui/*'
+      build:
+        patterns:
+          - 'vite'
+          - '@vitejs/*'
+          - 'tailwindcss'
+          - '@tailwindcss/*'
+    ignore:
+      # 치지직 세션 API 는 socket.io 프로토콜 2.0.3 까지만 지원합니다.
+      # 3.x/4.x 로 올리면 핸드셰이크가 실패해 채팅을 아예 못 받습니다.
+      - dependency-name: socket.io-client
+      - dependency-name: '@types/socket.io-client'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
