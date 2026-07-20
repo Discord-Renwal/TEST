@@ -6,6 +6,7 @@
  * 실행 전 `pnpm login` 으로 액세스 토큰을 발급받아야 합니다.
  */
 import { ChzzkClient } from '../client.js';
+import { ChzzkApiError } from '../core/errors.js';
 import { ConfigStore } from '../store/configStore.js';
 import { BotRuntime } from '../bot/runtime.js';
 import { createDashboard } from '../web/server.js';
@@ -71,7 +72,31 @@ session.on('error', (error) => {
   log.error('세션 오류', error);
 });
 
-await session.connect();
+try {
+  await session.connect();
+} catch (error) {
+  // 세션 생성 실패는 원인이 뚜렷한 편이라, 스택 트레이스보다 해법을 보여주는 게 낫습니다.
+  if (error instanceof ChzzkApiError && error.isRateLimited) {
+    log.error('세션 연결 제한을 초과했습니다. 유저 세션은 동시에 3개까지만 유지됩니다.');
+    log.error('이전에 띄운 봇 프로세스가 남아 있지 않은지 확인한 뒤 다시 실행하세요.');
+
+    // 어떤 세션이 물고 있는지 보여주면 정리하기 쉽습니다.
+    try {
+      const sessions = await chzzk.sessions.listUserSessions({ size: 10 });
+      const alive = sessions.filter((s) => !s.disconnectedDate);
+      log.error(`현재 연결된 세션 ${alive.length}개: ${alive.map((s) => s.sessionKey).join(', ')}`);
+    } catch {
+      /* 목록 조회까지 실패하면 그냥 넘어갑니다 */
+    }
+  } else {
+    log.error('채팅 세션 연결에 실패했습니다.', error);
+  }
+
+  if (dashboardUp) {
+    log.error(`대시보드(http://localhost:${env.DASHBOARD_PORT})는 계속 사용할 수 있습니다.`);
+  }
+  process.exitCode = 1;
+}
 
 if (dashboardUp) console.log(`\n  대시보드 → http://localhost:${env.DASHBOARD_PORT}\n`);
 

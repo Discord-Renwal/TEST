@@ -14,7 +14,15 @@ pnpm install
 cp .env.example .env      # 값 채우기 (이미 .env 가 있다면 생략)
 pnpm login                # 브라우저로 OAuth 인증 → .tokens/chzzk.json 생성
 pnpm doctor               # 인증/스코프 점검
+pnpm build:web            # 대시보드 빌드 (최초 1회)
 pnpm bot                  # 봇 + 설정 대시보드 실행 → http://localhost:4700
+```
+
+대시보드 UI 를 고칠 때는 HMR 이 되는 개발 서버를 쓰세요. `pnpm bot` 을 켜둔 채로
+다른 터미널에서 실행하면 `/api` 는 봇 서버로 프록시됩니다.
+
+```bash
+pnpm dev:web              # http://localhost:5173
 ```
 
 `pnpm login` 을 실행하기 전에 [개발자센터](https://developers.chzzk.naver.com/application)에서
@@ -76,6 +84,31 @@ pnpm bot                  # 봇 + 설정 대시보드 실행 → http://localhos
 | 봇 권한 설정    | 채팅에서 명령어를 관리할 역할, 추가 관리자 ID, 무시할 ID |
 | 신청곡 · 포인트 | **2단계에서 추가 예정**                                  |
 
+### 대시보드 스택
+
+React 19 + TypeScript, Vite 로 빌드하고 봇 서버가 `web/dist` 를 정적 서빙합니다.
+
+| 라이브러리      | 쓰는 이유                                                               |
+| --------------- | ----------------------------------------------------------------------- |
+| Tailwind CSS v4 | 디자인 토큰을 `@theme` 한 곳에 두고 라이트/다크를 CSS 변수로 전환       |
+| Radix UI        | Switch · Select · Dialog · Tooltip 의 접근성(role, 키보드, 포커스 트랩) |
+| lucide-react    | SVG 아이콘. 트리셰이킹되어 쓴 아이콘만 번들에 들어갑니다                |
+| TanStack Query  | 서버 상태 캐시·무효화·폴링. 저장하면 관련 화면이 알아서 갱신됩니다      |
+| react-hook-form | 필드 단위 렌더링. 카드가 많아도 입력이 무겁지 않습니다                  |
+| zod (공유)      | **서버와 같은 스키마**로 폼을 검증합니다                                |
+| motion          | 카드 펼침·목록 추가/삭제 전환                                           |
+| sonner          | 저장/오류 토스트                                                        |
+
+가장 중요한 건 **zod 스키마 공유**입니다. `src/store/schema.ts` 하나를 서버 API 와
+브라우저 폼이 함께 쓰기 때문에, 길이 제한이나 허용값을 고치면 양쪽이 동시에 따라옵니다.
+검증 규칙이 서로 어긋날 수 없습니다.
+
+차트 라이브러리는 넣지 않았습니다. 서버가 시계열을 보관하지 않아 그릴 데이터가
+브라우저에 쌓인 30개 남짓의 점뿐이고, 축·범례·툴팁이 필요 없는 그래프 하나에
+수십 KB를 더할 이유가 없어 SVG 폴리라인으로 직접 그렸습니다.
+
+번들은 gzip 약 200KB 입니다. localhost 에서만 쓰는 도구라 코드 분할은 하지 않았습니다.
+
 몇 가지 설계상 정해둔 규칙:
 
 - **금칙어 검사가 명령어보다 먼저** 실행됩니다. 명령어 인자에 금칙어를 숨겨 보내는 우회를 막습니다.
@@ -119,11 +152,16 @@ src/
     matcher.ts cooldown.ts  매칭 규칙, 쿨다운 추적
   web/
     server.ts               대시보드 REST API + 정적 파일 (127.0.0.1 전용)
-    public/                 빌드 없이 도는 바닐라 대시보드
   bot/
     runtime.ts              채팅 이벤트 처리 파이프라인
   scripts/                  login, doctor, start
   examples/basic-bot.ts     SDK 만 쓰는 최소 예제
+web/                        React 대시보드 (Vite)
+  src/
+    lib/                    API 훅(TanStack Query), 공유 스키마, 폼 리졸버
+    components/ui/          Button · Field · Switch · Select · Card · Dialog
+    components/             CommandCard · AutoResponseCard · BannedWordCard · Layout
+    pages/                  탭별 화면
 tests/                      vitest
 ```
 

@@ -1,0 +1,72 @@
+import { useState } from 'react';
+import { Loader2, PlugZap } from 'lucide-react';
+import { Layout, type TabId } from './components/Layout';
+import { EmptyState } from './components/ui/Card';
+import { Button } from './components/ui/Button';
+import { GeneralPage } from './pages/GeneralPage';
+import { CommandsPage } from './pages/CommandsPage';
+import { AutoResponsesPage } from './pages/AutoResponsesPage';
+import { BannedWordsPage } from './pages/BannedWordsPage';
+import { PermissionsPage } from './pages/PermissionsPage';
+import { ComingSoonPage } from './pages/ComingSoonPage';
+import { useConfig, useStatus } from './lib/api';
+
+export function App() {
+  const [tab, setTab] = useState<TabId>('general');
+  const config = useConfig();
+  const status = useStatus();
+
+  return (
+    <Layout tab={tab} onTabChange={setTab} status={status.data}>
+      {config.isPending ? (
+        <div className="flex items-center justify-center py-24 text-[var(--surface-muted)]">
+          <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : config.isError || !config.data ? (
+        <EmptyState icon={<PlugZap className="size-5" />} title="설정을 불러오지 못했습니다">
+          <p>{config.error?.message ?? '봇 서버에 연결할 수 없습니다.'}</p>
+          <p className="mt-1">
+            터미널에서 <code className="text-brand">pnpm bot</code> 이 실행 중인지 확인하세요.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-4"
+            onClick={() => void config.refetch()}
+          >
+            다시 시도
+          </Button>
+        </EmptyState>
+      ) : (
+        <Pages tab={tab} config={config.data} stats={status.data?.stats ?? null} />
+      )}
+    </Layout>
+  );
+}
+
+function Pages({
+  tab,
+  config,
+  stats,
+}: {
+  tab: TabId;
+  config: NonNullable<ReturnType<typeof useConfig>['data']>;
+  stats: NonNullable<ReturnType<typeof useStatus>['data']>['stats'];
+}) {
+  switch (tab) {
+    case 'general':
+      return <GeneralPage config={config} stats={stats} />;
+    case 'commands':
+      return <CommandsPage config={config} />;
+    case 'auto':
+      return <AutoResponsesPage config={config} />;
+    case 'banned':
+      return <BannedWordsPage config={config} />;
+    case 'permissions':
+      return <PermissionsPage config={config} />;
+    case 'songs':
+      return <ComingSoonPage kind="songs" />;
+    case 'points':
+      return <ComingSoonPage kind="points" />;
+  }
+}

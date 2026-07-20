@@ -34,3 +34,6 @@ Thumbs.db
 
 # 봇 설정 데이터 (명령어/자동응답/금칙어)
 data/
+
+# React 대시보드 빌드 산출물
+web/dist/

@@ -12,7 +12,27 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
 };
+
+/** 프런트엔드를 빌드하지 않고 접속했을 때 보여주는 안내 */
+const NOT_BUILT_HTML = `<!doctype html><html lang="ko"><meta charset="utf-8">
+<title>대시보드 빌드 필요</title>
+<body style="font-family:system-ui,'Malgun Gothic',sans-serif;background:#0d0f13;color:#eceef2;
+display:grid;place-items:center;min-height:100vh;margin:0">
+<div style="max-width:32rem;padding:2rem">
+<h1 style="font-size:1.1rem;margin:0 0 .75rem">대시보드가 아직 빌드되지 않았습니다</h1>
+<p style="color:#7d8695;line-height:1.7;margin:0 0 1rem">
+React 대시보드는 <code>web/dist</code> 에 빌드된 파일을 사용합니다. 아래 중 하나를 실행하세요.</p>
+<pre style="background:#1e2229;padding:1rem;border-radius:.5rem;overflow:auto;line-height:1.6"><code>pnpm build:web   <span style="color:#7d8695"># 빌드 후 이 주소를 새로고침</span>
+pnpm dev:web     <span style="color:#7d8695"># 개발 서버(HMR) → http://localhost:5173</span></code></pre>
+<p style="color:#7d8695;line-height:1.7;margin:1rem 0 0">
+API 는 정상 동작 중이므로 봇 자체는 영향을 받지 않습니다.</p>
+</div></body></html>`;
 
 export interface DashboardOptions {
   store: ConfigStore;
@@ -35,7 +55,8 @@ export interface DashboardOptions {
 export function createDashboard(options: DashboardOptions) {
   const { store, logger } = options;
   const log = logger.child('web');
-  const publicDir = resolve(options.publicDir ?? join(process.cwd(), 'src/web/public'));
+  // React 대시보드의 빌드 산출물. `pnpm build:web` 이 만들어 둡니다.
+  const publicDir = resolve(options.publicDir ?? join(process.cwd(), 'web/dist'));
   const port = options.port ?? 4000;
 
   const server = createServer((req, res) => {
@@ -215,12 +236,28 @@ export function createDashboard(options: DashboardOptions) {
 
     try {
       const content = await readFile(target);
-      res.writeHead(200, { 'Content-Type': MIME[extname(target)] ?? 'application/octet-stream' });
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(target)] ?? 'application/octet-stream',
+        // 해시가 붙은 에셋은 오래 캐시해도 안전하고, index.html 은 항상 새로 받아야 합니다.
+        'Cache-Control': target.endsWith('index.html')
+          ? 'no-cache'
+          : 'public, max-age=31536000, immutable',
+      });
       res.end(content);
+      return;
     } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('찾을 수 없습니다.');
+      /* 아래에서 처리 */
     }
+
+    // 빌드를 안 했으면 404 대신 무엇을 해야 하는지 알려줍니다.
+    if (relative === 'index.html') {
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(NOT_BUILT_HTML);
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('찾을 수 없습니다.');
   }
 
   return {
