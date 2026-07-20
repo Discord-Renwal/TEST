@@ -1,21 +1,54 @@
 {
-  "name": "thomyorke",
-  "version": "1.0.0",
-  "description": "nice dream",
-  "main": "index.js",
+  "name": "chzzk-chat-bot-tools",
+  "version": "0.1.0",
+  "description": "CHZZK Open API 기반 채팅 봇 툴킷 (TypeScript)",
   "type": "module",
-  "scripts": {
-    "web": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.11.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/examples/basic-bot.ts",
+    "start": "node dist/examples/basic-bot.js",
+    "login": "tsx src/scripts/login.ts",
+    "doctor": "tsx src/scripts/doctor.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "jsonfile": "^6.1.0",
-    "moment": "^2.30.1",
-    "random": "^4.1.0",
-    "simple-git": "^3.25.0"
-  }
+    "dotenv": "^16.4.7",
+    "socket.io-client": "2.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.5",
+    "@types/socket.io-client": "1.4.36",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.8"
+  },
+  "license": "MIT"
 }
