@@ -117,6 +117,10 @@ export class JsonFile<T> {
         // ② 실패한 프라미스가 큐에 남아 이후 쓰기까지 전부 함께 실패합니다.
         // 그래서 삼키되, 조용히 잃지 않도록 기록하고 로그를 남깁니다.
         this.lastWriteError = error;
+        // 저장이 안 됐으므로 "저장할 게 남았다" 는 사실을 되돌려 놓습니다.
+        // 그러지 않으면 hasPendingWrites 가 false 라고 거짓말해서,
+        // 이를 "안전하게 종료해도 된다" 는 신호로 쓰는 쪽이 데이터를 잃습니다.
+        this.dirty = true;
         this.log.error(`${this.filePath} 저장에 실패했습니다.`, error);
       }
     });

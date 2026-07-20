@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { ConfigStore } from '../store/configStore.js';
 import type { BotRuntime } from '../bot/runtime.js';
 import type { Logger } from '../core/logger.js';
@@ -13,6 +13,8 @@ import {
   timerMessage,
 } from '../store/schema.js';
 import { isValidPattern } from '../features/matcher.js';
+import { findBuiltin } from '../features/builtinCommands.js';
+import { isGameCommandName } from '../features/games.js';
 import type { UserStore } from '../store/userStore.js';
 import type { SongQueueStore } from '../store/songQueue.js';
 import type { EventLog } from '../store/eventLog.js';
@@ -93,6 +95,28 @@ export function createDashboard(options: DashboardOptions) {
 
     if (path.startsWith('/api/')) return handleApi(req, res, path);
     return serveStatic(res, path);
+  }
+
+  /**
+   * 이름·별칭이 다른 명령과 겹치는지 확인합니다.
+   *
+   * 내장 명령까지 함께 봐야 합니다. 예전에는 커스텀끼리만 비교해서,
+   * `!시간` 이나 `!팔로워` 같은 이름을 만들면 저장은 200 으로 성공하는데
+   * 실제로는 내장이 먼저 잡아 영영 실행되지 않았습니다.
+   */
+  function findNameConflict(name: string, aliases: string[], selfId?: string): string | null {
+    for (const candidate of [name, ...aliases]) {
+      const existing = store.findCommand(candidate);
+      if (existing && existing.id !== selfId) {
+        return `"${candidate}" 은(는) 이미 다른 명령이 쓰고 있습니다.`;
+      }
+      // 게임 명령은 BUILTIN_COMMANDS 가 아니라 런타임에서 따로 처리하므로
+      // 여기서 함께 확인해야 합니다.
+      if (findBuiltin(candidate) || isGameCommandName(candidate)) {
+        return `"${candidate}" 은(는) 내장 명령과 겹칩니다. 다른 이름을 쓰세요.`;
+      }
+    }
+    return null;
   }
 
   // ─── API ───────────────────────────────────────────────────────────────────
@@ -207,6 +231,8 @@ export function createDashboard(options: DashboardOptions) {
       const channelId = userPointMatch[1]!;
       const existing = options.users.get(channelId);
       const total = options.users.addPoints(channelId, existing?.nickname ?? '', Math.floor(delta));
+      // 다른 변경 라우트와 마찬가지로 즉시 내려씁니다.
+      await options.users.flush();
       return sendJson(res, 200, { channelId, points: total });
     }
 
@@ -397,15 +423,8 @@ export function createDashboard(options: DashboardOptions) {
       const parsed = customCommand.omit({ id: true }).safeParse(body);
       if (!parsed.success) return sendJson(res, 400, { error: formatIssues(parsed.error.issues) });
 
-      if (store.findCommand(parsed.data.name)) {
-        return sendJson(res, 409, { error: `"${parsed.data.name}" 명령이 이미 있습니다.` });
-      }
-      // 별칭이 기존 명령과 겹쳐도 영영 호출되지 않는 명령이 생깁니다.
-      for (const alias of parsed.data.aliases) {
-        if (store.findCommand(alias)) {
-          return sendJson(res, 409, { error: `별칭 "${alias}" 이(가) 이미 사용 중입니다.` });
-        }
-      }
+      const conflict = findNameConflict(parsed.data.name, parsed.data.aliases);
+      if (conflict) return sendJson(res, 409, { error: conflict });
 
       return sendJson(res, 200, await store.upsertCommand(parsed.data));
     }
@@ -421,6 +440,13 @@ export function createDashboard(options: DashboardOptions) {
         const parsed = customCommand.safeParse({ ...existing, ...(body as object), id });
         if (!parsed.success)
           return sendJson(res, 400, { error: formatIssues(parsed.error.issues) });
+
+        // 생성 때와 같은 검사를 여기서도 해야 합니다. 그러지 않으면 이름을
+        // 이미 있는 명령으로 바꿔 저장할 수 있고, findCommand 는 먼저 찾은
+        // 것만 돌려주므로 이 명령이 영영 호출되지 않습니다.
+        const conflict = findNameConflict(parsed.data.name, parsed.data.aliases, id);
+        if (conflict) return sendJson(res, 409, { error: conflict });
+
         return sendJson(res, 200, await store.upsertCommand(parsed.data));
       }
       if (method === 'DELETE') {
@@ -504,7 +530,9 @@ export function createDashboard(options: DashboardOptions) {
     const relative = path === '/' ? 'index.html' : path.slice(1);
     // 경로 탈출(../) 차단
     const target = resolve(publicDir, normalize(relative));
-    if (!target.startsWith(publicDir)) {
+    // 구분자까지 포함해 비교해야 합니다. 단순 문자열 접두사면
+    // `web/dist-backup` 처럼 이름이 같은 이웃 디렉터리로 새어 나갑니다.
+    if (target !== publicDir && !target.startsWith(publicDir + sep)) {
       res.writeHead(403).end('forbidden');
       return;
     }

@@ -57,7 +57,7 @@ describe('명령어 API', () => {
   it('이름이 겹치면 409 로 거부한다', async () => {
     const res = await req('/commands', 'POST', { name: '멤버' });
     expect(res.status).toBe(409);
-    expect(String(res.body.error)).toContain('이미 있습니다');
+    expect(String(res.body.error)).toContain('이미 다른 명령이');
   });
 
   it('기존 명령의 별칭과 겹쳐도 거부한다', async () => {
@@ -93,6 +93,30 @@ describe('명령어 API', () => {
 
     expect((await req(`/commands/${id}`, 'DELETE')).status).toBe(200);
     expect(store.findCommand('임시')).toBeUndefined();
+  });
+
+  it('내장 명령과 겹치는 이름은 409 로 거부한다', async () => {
+    // 저장은 성공했는데 내장이 먼저 잡아 영영 실행되지 않는 상황을 막습니다.
+    for (const name of ['시간', '포인트', '팔로워']) {
+      const res = await req('/commands', 'POST', { name });
+      expect(res.status).toBe(409);
+      expect(String(res.body.error)).toContain('내장 명령');
+    }
+  });
+
+  it('수정할 때도 이름 충돌을 막는다', async () => {
+    const created = await req('/commands', 'POST', { name: '임시이름' });
+    const id = created.body.id as string;
+
+    // 이미 있는 !멤버 로 이름을 바꾸려는 시도
+    const renamed = await req(`/commands/${id}`, 'PUT', { name: '멤버' });
+    expect(renamed.status).toBe(409);
+
+    // 내장 명령 이름으로 바꾸는 것도 막습니다.
+    expect((await req(`/commands/${id}`, 'PUT', { name: '랭킹' })).status).toBe(409);
+
+    // 자기 이름 그대로 저장하는 건 통과해야 합니다.
+    expect((await req(`/commands/${id}`, 'PUT', { response: '수정됨' })).status).toBe(200);
   });
 
   it('없는 id 수정은 404', async () => {
@@ -150,5 +174,21 @@ describe('정적 파일', () => {
   it('경로 탈출을 막는다', async () => {
     const res = await fetch(`${base.replace('/api', '')}/../../.env`);
     expect([403, 404]).toContain(res.status);
+  });
+});
+
+describe('명령어 이름 충돌', () => {
+  it('게임 명령 이름도 거부한다', async () => {
+    // 게임(!도박 !주사위 !슬롯)은 BUILTIN_COMMANDS 가 아니라 런타임에서
+    // 따로 처리해서, 충돌 검사에서 빠져 있었다. 저장은 되는데 실행되지
+    // 않는 명령이 만들어졌다.
+    for (const name of ['슬롯', '도박', '주사위', 'slots']) {
+      const res = await req('/commands', 'POST', { name });
+      expect(res.status, `${name} 이(가) 허용되면 안 됩니다`).toBe(409);
+    }
+  });
+
+  it('겹치지 않는 이름은 통과한다', async () => {
+    expect((await req('/commands', 'POST', { name: '오늘일정' })).status).toBe(200);
   });
 });

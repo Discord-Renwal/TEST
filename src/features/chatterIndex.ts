@@ -42,18 +42,26 @@ export class ChatterIndex {
     }
   }
 
-  /** 정확히 일치하는 닉네임을 먼저 찾고, 없으면 앞부분이 일치하는 유일한 후보를 씁니다. */
-  find(nickname: string): Chatter | null {
+  /**
+   * 닉네임으로 찾습니다. 기본은 **정확히 일치**할 때만입니다.
+   *
+   * 앞부분 일치는 위험합니다. 이 색인은 최근 채팅한 사람만 담고 있어서,
+   * 정확히 그 닉네임인 사람이 색인에서 밀려났을 때만 앞부분 일치가 발동합니다.
+   * 즉 "달" 이 밀려난 상태에서 `!밴 달` 을 치면 "달빛여우" 가 밴됩니다.
+   * 그래서 제재처럼 되돌리기 어려운 동작에는 정확 일치만 허용합니다.
+   */
+  find(nickname: string, options: { allowPrefix?: boolean } = {}): Chatter | null {
     const key = nickname.trim().toLowerCase();
     if (!key) return null;
 
     const exact = this.byNickname.get(key);
     if (exact) return exact;
+    if (!options.allowPrefix) return null;
 
     const partial = [...this.byNickname.values()].filter((c) =>
       c.nickname.toLowerCase().startsWith(key)
     );
-    // 후보가 여럿이면 엉뚱한 사람을 제재할 수 있으므로 포기합니다.
+    // 후보가 여럿이면 엉뚱한 사람을 고를 수 있으므로 포기합니다.
     return partial.length === 1 ? partial[0]! : null;
   }
 

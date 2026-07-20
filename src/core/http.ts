@@ -90,7 +90,10 @@ export class HttpClient {
           continue;
         }
 
-        const retryable = error.isRateLimited || error.status >= 500;
+        // 429 는 요청이 거절된 것이므로 어떤 메서드든 안전하게 재시도할 수 있습니다.
+        // 5xx 는 다릅니다 — 서버가 이미 처리한 뒤 실패했을 수 있어, POST 를 재시도하면
+        // 같은 채팅이 두 번 나갈 수 있습니다. 그래서 5xx 재시도는 GET 으로 한정합니다.
+        const retryable = error.isRateLimited || (error.status >= 500 && opts.method === 'GET');
         if (retryable && attempt < this.maxRetries) {
           const backoff = 500 * 2 ** attempt;
           this.log.warn(

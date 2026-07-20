@@ -11,7 +11,7 @@ import { CustomCommandEngine } from '../features/customCommands.js';
 import { Moderator } from '../features/moderation.js';
 import { SpamFilter } from '../features/spamFilter.js';
 import { PointEngine, formatPoints } from '../features/points.js';
-import { GameEngine, type GameResult } from '../features/games.js';
+import { GameEngine, GAME_COMMAND_NAMES, type GameResult } from '../features/games.js';
 import { ChatterIndex } from '../features/chatterIndex.js';
 import { AudienceIndex } from '../features/audienceIndex.js';
 import { TimerScheduler } from '../features/timers.js';
@@ -141,22 +141,46 @@ export class BotRuntime {
   async handleChat(event: ChatEvent): Promise<void> {
     const config = this.deps.config.snapshot();
 
-    this.stats.messagesSeen += 1;
-    this.stats.lastChatAt = Date.now();
-
-    if (!config.general.enabled) return;
+    // 봇 자신과 무시 대상은 통계에도 넣지 않습니다. 넣으면 "본 메시지" 가
+    // 실제로 처리한 양과 어긋납니다.
     if (event.senderChannelId === this.deps.botChannelId) return;
     if (isIgnored(event, config.permissions)) return;
 
+    // 임시제한 해제에 필요한 값이라, 봇이 꺼져 있어도 기록해 둡니다.
+    this.lastChatChannel = event.chatChannelId;
+
+    this.stats.messagesSeen += 1;
+    this.stats.lastChatAt = Date.now();
+    this.stats.uniqueChatters = this.deps.users.userCount;
+
+    if (!config.general.enabled) return;
+
     this.chatters.remember(event);
     this.timers.noteChat();
-    this.lastChatChannel = event.chatChannelId;
     void this.audience.refresh();
 
     const nickname = event.profile?.nickname ?? '';
     const firstEver = this.deps.users.isFirstEver(event.senderChannelId);
 
-    // 1) 스팸 필터
+    // 1) 금칙어 — 스팸보다 **먼저** 봅니다.
+    //
+    // 순서를 바꾸면 우회가 생깁니다. 예전에는 스팸을 먼저 봐서,
+    // 금칙어 뒤에 "ㅋㅋㅋㅋㅋㅋ" 만 붙이면 스팸(1회차 경고)으로 처리되고
+    // 금칙어에 설정한 임시제한이 실행되지 않았습니다. 적발 횟수도 오르지 않아
+    // 대시보드에는 "이 단어는 쓰인 적 없음" 으로 보였습니다.
+    const verdict = this.moderator.inspect(event, config);
+    if (verdict) {
+      this.stats.moderationActions += 1;
+      await this.deps.config.bumpBannedWordHit(verdict.word.id);
+      await this.punish(event, {
+        label: '금칙어',
+        tempBan: verdict.tempBan,
+        warn: verdict.warn,
+      });
+      return;
+    }
+
+    // 2) 스팸 필터
     const spam = this.spamFilter.inspect(event, config.moderation.spam);
     if (spam) {
       this.stats.spamBlocked += 1;
@@ -167,19 +191,6 @@ export class BotRuntime {
           spam.violations === 1
             ? `${nickname}님, ${spam.label} 은(는) 자제해 주세요.`
             : `${nickname}님, ${spam.label} — ${spam.violations}회째입니다.`,
-      });
-      return;
-    }
-
-    // 2) 금칙어
-    const verdict = this.moderator.inspect(event, config);
-    if (verdict) {
-      this.stats.moderationActions += 1;
-      await this.deps.config.bumpBannedWordHit(verdict.word.id);
-      await this.punish(event, {
-        label: '금칙어',
-        tempBan: verdict.tempBan,
-        warn: verdict.warn,
       });
       return;
     }
@@ -235,21 +246,21 @@ export class BotRuntime {
 
     // 미니게임
     const game = this.runGame(event, key, args[0], config);
-    if (game !== undefined) {
+    if (game) {
       this.stats.commandsRun += 1;
-      if (game) {
-        await this.reply(game.message);
-        this.deps.log.push('command', game.message, { actor: nickname });
-      }
+      await this.reply(game.message);
+      this.deps.log.push('command', game.message, { actor: nickname });
       return true;
     }
 
     // 내장 명령
+    //
+    // 내장이 아무 일도 하지 않았다면(기능이 꺼져 있거나 권한이 없거나) 여기서
+    // 끝내지 않고 커스텀 명령으로 넘깁니다. 예전에는 무조건 처리됨으로 봐서,
+    // 포인트를 꺼두면 `!포인트`, 신청곡을 꺼두면 `!취소` 같은 이름이 죽은 이름이 되고
+    // 대시보드에서 같은 이름으로 만든 명령이 영영 실행되지 않았습니다.
     const builtin = findBuiltin(name);
-    if (builtin) {
-      if (builtin.adminOnly && !admin) return true; // 조용히 무시
-      this.stats.commandsRun += 1;
-
+    if (builtin && !(builtin.adminOnly && !admin)) {
       const reply = await builtin.run({
         event,
         config,
@@ -268,12 +279,13 @@ export class BotRuntime {
         this.channel.invalidate();
       }
       if (reply) {
+        this.stats.commandsRun += 1;
         await this.reply(reply);
         this.deps.log.push('command', `${config.general.prefix}${name} → ${reply}`, {
           actor: nickname,
         });
+        return true;
       }
-      return true;
     }
 
     // 사용자 정의 명령
@@ -287,9 +299,11 @@ export class BotRuntime {
         : undefined
     );
     if (outcome.handled) {
-      this.stats.commandsRun += 1;
       if (outcome.reply) {
-        await this.reply(this.expand(outcome.reply, event, rest, name));
+        this.stats.commandsRun += 1;
+        // 실행 직후의 값을 다시 읽어 $카운트 에 넣습니다.
+        const used = this.deps.config.findCommand(name)?.usedCount ?? 0;
+        await this.reply(this.expand(outcome.reply, event, rest, name, used));
         this.deps.log.push('command', `${config.general.prefix}${name}`, { actor: nickname });
       }
       return true;
@@ -309,20 +323,24 @@ export class BotRuntime {
     bet: string | undefined,
     config: BotConfig
   ): GameResult | null | undefined {
-    // 게임이 꺼져 있으면 이 이름들을 아예 잡지 않습니다.
-    // 여기서 null(=처리됨) 을 돌려주면 같은 이름의 커스텀 명령이 영영 가려집니다.
+    // 꺼진 게임의 이름은 아예 잡지 않습니다.
+    // 여기서 결과를 돌려주면 같은 이름의 커스텀 명령이 영영 가려집니다.
+    // 전체 스위치뿐 아니라 **게임별 스위치**도 함께 봐야 합니다.
     if (!config.games.enabled) return undefined;
 
     const nickname = event.profile?.nickname ?? '';
     const id = event.senderChannelId;
 
-    if (['도박', 'gamble'].includes(key)) {
+    if (GAME_COMMAND_NAMES.gamble.some((n) => n === key)) {
+      if (!config.games.gambleEnabled) return undefined;
       return this.games.gamble(id, nickname, bet, config.games, config.points);
     }
-    if (['주사위', 'dice'].includes(key)) {
+    if (GAME_COMMAND_NAMES.dice.some((n) => n === key)) {
+      if (!config.games.diceEnabled) return undefined;
       return this.games.dice(id, nickname, bet, config.games, config.points);
     }
-    if (['슬롯', 'slot', 'slots'].includes(key)) {
+    if (GAME_COMMAND_NAMES.slots.some((n) => n === key)) {
+      if (!config.games.slotsEnabled) return undefined;
       return this.games.slots(id, nickname, bet, config.games, config.points);
     }
     return undefined;
@@ -431,8 +449,20 @@ export class BotRuntime {
     if (action.warn) await this.reply(action.warn);
   }
 
-  /** 랜덤 응답을 고른 뒤 변수를 채웁니다. */
-  private expand(template: string, event: ChatEvent, query: string, commandName = ''): string {
+  /**
+   * 랜덤 응답을 고른 뒤 변수를 채웁니다.
+   *
+   * `$카운트` 는 **그 명령어가 실제로 실행된 횟수**입니다. 예전에는 전역
+   * commandsRun 을 넣었는데, 그 값은 쿨다운에 막힌 호출까지 세고 다른 명령의
+   * 실행에도 올라갔습니다. `!데스` 를 연타하면 응답 하나에 카운터가 10씩 뛰었습니다.
+   */
+  private expand(
+    template: string,
+    event: ChatEvent,
+    query: string,
+    commandName = '',
+    commandCount = 0
+  ): string {
     const picked = pickRandomVariant(template);
 
     const userKey = `${commandName}:${event.senderChannelId}`;
@@ -442,7 +472,7 @@ export class BotRuntime {
     return expandVariables(picked, {
       event,
       query,
-      commandCount: this.stats.commandsRun,
+      commandCount,
       userCount,
       channel: this.channel,
       users: this.deps.users,

@@ -5,6 +5,27 @@ import { formatPoints } from './points.js';
 
 const SLOT_SYMBOLS = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'] as const;
 
+/**
+ * 게임 명령 이름.
+ *
+ * 런타임의 분기와 대시보드의 이름 충돌 검사가 **같은 목록**을 봐야 합니다.
+ * 따로 두면 여기만 늘렸을 때 대시보드가 겹치는 이름을 허용해,
+ * 저장은 되는데 실행되지 않는 명령이 생깁니다.
+ */
+export const GAME_COMMAND_NAMES = {
+  gamble: ['도박', 'gamble'],
+  dice: ['주사위', 'dice'],
+  slots: ['슬롯', 'slot', 'slots'],
+} as const;
+
+/** 게임 명령 이름이면 true */
+export function isGameCommandName(name: string): boolean {
+  const key = name.toLowerCase();
+  return Object.values(GAME_COMMAND_NAMES).some((names) =>
+    names.some((n) => n.toLowerCase() === key)
+  );
+}
+
 export interface GameResult {
   /** 채팅에 내보낼 문구 */
   message: string;

@@ -6,6 +6,7 @@ import { UserStore, kstDate } from '../src/store/userStore.js';
 import { SongQueueStore } from '../src/store/songQueue.js';
 import { EventLog } from '../src/store/eventLog.js';
 import { SpamFilter, hasRepeatedRun, containsBlockedLink } from '../src/features/spamFilter.js';
+import { Moderator } from '../src/features/moderation.js';
 import { GameEngine } from '../src/features/games.js';
 import { PointEngine } from '../src/features/points.js';
 import { ChatterIndex } from '../src/features/chatterIndex.js';
@@ -364,13 +365,17 @@ describe('변수 치환', () => {
 // ─── 기타 ─────────────────────────────────────────────────────────────────────
 
 describe('ChatterIndex', () => {
-  it('닉네임으로 채널 ID 를 찾는다', () => {
+  it('정확히 일치하는 닉네임만 찾는다', () => {
     const index = new ChatterIndex();
     index.remember(chat('안녕', { senderChannelId: 'u1' }));
 
     expect(index.find('홍길동')?.channelId).toBe('u1');
-    expect(index.find('홍길')?.channelId).toBe('u1'); // 앞부분 일치
     expect(index.find('없는사람')).toBeNull();
+
+    // 앞부분 일치는 기본적으로 막습니다. 색인에서 밀려난 사람을 지정했을 때
+    // 엉뚱한 사람이 제재당하는 걸 막기 위해서입니다.
+    expect(index.find('홍길')).toBeNull();
+    expect(index.find('홍길', { allowPrefix: true })?.channelId).toBe('u1');
   });
 
   it('앞부분 일치 후보가 여럿이면 포기한다', () => {
@@ -388,8 +393,8 @@ describe('ChatterIndex', () => {
       })
     );
 
-    // 엉뚱한 사람을 제재하면 안 되므로 null 이어야 합니다.
-    expect(index.find('홍길')).toBeNull();
+    // 앞부분 일치를 허용해도 후보가 여럿이면 포기해야 합니다.
+    expect(index.find('홍길', { allowPrefix: true })).toBeNull();
     expect(index.find('홍길동')?.channelId).toBe('u1');
   });
 });
@@ -477,5 +482,34 @@ describe('회귀: 구독 즉시 반영', () => {
 
     expect(index.isSubscriber('newbie')).toBe(true);
     expect(index.subscriberOf('newbie')?.channelName).toBe('새구독자');
+  });
+});
+
+describe('회귀: 금칙어가 스팸보다 먼저', () => {
+  it('금칙어 뒤에 자음 연타를 붙여도 금칙어 조치가 적용된다', () => {
+    // 예전에는 스팸을 먼저 봐서, "금칙ㅋㅋㅋㅋㅋㅋ" 이 스팸 1회차 경고로
+    // 처리되고 금칙어에 설정한 임시제한이 실행되지 않았다.
+    // 적발 횟수도 오르지 않아 대시보드에는 쓰인 적 없는 단어로 보였다.
+    const config = botConfig.parse({
+      moderation: {
+        enabled: true,
+        allowTempBan: true,
+        words: [{ id: 'w1', pattern: '금칙', action: 'blindAndTempBan' }],
+        spam: { enabled: true, maxRepeatedChars: 3 },
+      },
+    });
+
+    const moderator = new Moderator();
+    const filter = new SpamFilter();
+    const event = chat('금칙ㅋㅋㅋㅋㅋㅋ');
+
+    // 런타임과 같은 순서로 검사합니다.
+    const verdict = moderator.inspect(event, config);
+    expect(verdict).not.toBeNull();
+    expect(verdict?.tempBan).toBe(true);
+
+    // 금칙어에서 걸렸으므로 스팸 검사까지 갈 일이 없습니다.
+    // (만약 갔다면 아래가 1회차 경고로 잡힙니다)
+    expect(filter.inspect(event, config.moderation.spam)?.violations).toBe(1);
   });
 });

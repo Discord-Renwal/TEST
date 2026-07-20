@@ -112,7 +112,8 @@ const givePoints: BuiltinCommand = {
       return '사용법: !지급 <닉네임> <수량>';
     }
 
-    const target = chatters.find(nickname);
+    // 포인트 지급은 되돌릴 수 있어 앞부분 일치를 허용합니다.
+    const target = chatters.find(nickname, { allowPrefix: true });
     if (!target) {
       return `"${nickname}" 님을 찾지 못했습니다. 최근에 채팅한 사람만 지정할 수 있습니다.`;
     }
