@@ -1,61 +1,11 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
-import {
-  AlarmClock,
-  Bell,
-  Bot,
-  Coins,
-  Dices,
-  Moon,
-  Music,
-  MessagesSquare,
-  Gavel,
-  SlidersVertical,
-  Radio,
-  ShieldBan,
-  Users,
-  SlidersHorizontal,
-  Sun,
-  TerminalSquare,
-  UserCog,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Bot, Moon, Sun } from 'lucide-react';
 import { motion } from 'motion/react';
+import { NavLink, useLocation } from 'react-router';
+import { ROUTES, NAV_GROUPS } from '../routes';
 import { useEffect, useState, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import type { StatusResponse } from '../lib/types';
-
-export type TabId =
-  | 'general'
-  | 'events'
-  | 'commands'
-  | 'auto'
-  | 'timers'
-  | 'points'
-  | 'games'
-  | 'songs'
-  | 'notifications'
-  | 'banned'
-  | 'restrictions'
-  | 'chatSettings'
-  | 'audience'
-  | 'permissions';
-
-export const TABS: { id: TabId; label: string; icon: LucideIcon; group: string }[] = [
-  { id: 'general', label: '일반', icon: SlidersHorizontal, group: '상태' },
-  { id: 'events', label: '실시간 로그', icon: Radio, group: '상태' },
-  { id: 'commands', label: '명령어', icon: TerminalSquare, group: '채팅' },
-  { id: 'auto', label: '자동응답', icon: MessagesSquare, group: '채팅' },
-  { id: 'timers', label: '주기 메시지', icon: AlarmClock, group: '채팅' },
-  { id: 'notifications', label: '알림 · 인사', icon: Bell, group: '채팅' },
-  { id: 'points', label: '포인트', icon: Coins, group: '참여' },
-  { id: 'games', label: '미니게임', icon: Dices, group: '참여' },
-  { id: 'songs', label: '신청곡', icon: Music, group: '참여' },
-  { id: 'banned', label: '금칙어 · 스팸', icon: ShieldBan, group: '관리' },
-  { id: 'restrictions', label: '제재 관리', icon: Gavel, group: '관리' },
-  { id: 'chatSettings', label: '채팅 설정', icon: SlidersVertical, group: '관리' },
-  { id: 'audience', label: '팔로워 · 구독자', icon: Users, group: '관리' },
-  { id: 'permissions', label: '봇 권한', icon: UserCog, group: '관리' },
-];
 
 /** 다크/라이트 전환. 선택은 localStorage 에 남습니다. */
 function ThemeToggle() {
@@ -134,17 +84,12 @@ function ConnectionBadge({ status }: { status: StatusResponse | undefined }) {
   );
 }
 
-/** 사이드바 그룹 순서 — TABS 의 group 값을 처음 나온 순서대로 씁니다. */
-const NAV_GROUPS = [...new Set(TABS.map((t) => t.group))];
-
 interface LayoutProps {
-  tab: TabId;
-  onTabChange: (tab: TabId) => void;
   status: StatusResponse | undefined;
   children: ReactNode;
 }
 
-export function Layout({ tab, onTabChange, status, children }: LayoutProps) {
+export function Layout({ status, children }: LayoutProps) {
   return (
     <Tooltip.Provider delayDuration={200}>
       <div className="min-h-dvh">
@@ -170,29 +115,34 @@ export function Layout({ tab, onTabChange, status, children }: LayoutProps) {
                   <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--surface-muted)]">
                     {group}
                   </p>
-                  {TABS.filter((t) => t.group === group).map(({ id, label, icon: Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => onTabChange(id)}
-                      className={cn(
-                        'relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm',
-                        'transition-colors focus-visible:focus-ring',
-                        tab === id
-                          ? 'text-brand-ink'
-                          : 'text-[var(--surface-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--surface-text)]'
-                      )}
+                  {ROUTES.filter((r) => r.group === group).map(({ path, label, icon: Icon }) => (
+                    <NavLink
+                      key={path}
+                      to={`/${path}`}
+                      className={({ isActive }) =>
+                        cn(
+                          'relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm',
+                          'transition-colors focus-visible:focus-ring',
+                          isActive
+                            ? 'text-brand-ink'
+                            : 'text-[var(--surface-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--surface-text)]'
+                        )
+                      }
                     >
-                      {tab === id ? (
-                        <motion.span
-                          layoutId="nav-active"
-                          className="absolute inset-0 rounded-lg bg-brand"
-                          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                        />
-                      ) : null}
-                      <Icon className="relative size-4 shrink-0" />
-                      <span className="relative flex-1 truncate font-medium">{label}</span>
-                    </button>
+                      {({ isActive }) => (
+                        <>
+                          {isActive ? (
+                            <motion.span
+                              layoutId="nav-active"
+                              className="absolute inset-0 rounded-lg bg-brand"
+                              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                            />
+                          ) : null}
+                          <Icon className="relative size-4 shrink-0" />
+                          <span className="relative flex-1 truncate font-medium">{label}</span>
+                        </>
+                      )}
+                    </NavLink>
                   ))}
                 </div>
               ))}
@@ -202,26 +152,27 @@ export function Layout({ tab, onTabChange, status, children }: LayoutProps) {
           {/* 좁은 화면에서는 가로 스크롤 탭 */}
           <div className="min-w-0 flex-1">
             <nav className="mb-5 flex gap-1 overflow-x-auto pb-1 lg:hidden">
-              {TABS.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onTabChange(id)}
-                  className={cn(
-                    'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium',
-                    tab === id
-                      ? 'bg-brand text-brand-ink'
-                      : 'text-[var(--surface-muted)] hover:bg-[var(--surface-raised)]'
-                  )}
+              {ROUTES.map(({ path, label, icon: Icon }) => (
+                <NavLink
+                  key={path}
+                  to={`/${path}`}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium',
+                      isActive
+                        ? 'bg-brand text-brand-ink'
+                        : 'text-[var(--surface-muted)] hover:bg-[var(--surface-raised)]'
+                    )
+                  }
                 >
                   <Icon className="size-4" />
                   {label}
-                </button>
+                </NavLink>
               ))}
             </nav>
 
             <motion.main
-              key={tab}
+              key={useLocation().pathname}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}

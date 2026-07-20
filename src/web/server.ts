@@ -552,11 +552,33 @@ export function createDashboard(options: DashboardOptions) {
       /* 아래에서 처리 */
     }
 
-    // 빌드를 안 했으면 404 대신 무엇을 해야 하는지 알려줍니다.
-    if (relative === 'index.html') {
-      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(NOT_BUILT_HTML);
-      return;
+    // 파일이 없는데 확장자도 없다면 클라이언트 라우트입니다.
+    //
+    // 대시보드는 /points, /songs 같은 주소를 브라우저 히스토리로 다룹니다.
+    // 그 주소로 새로고침하거나 링크를 직접 열면 서버에 실제 파일이 없으므로,
+    // index.html 을 돌려줘야 React Router 가 이어받습니다. 이게 없으면
+    // 주소창에 붙여 넣은 링크가 전부 404 로 죽습니다.
+    //
+    // 마지막 조각에 점이 있으면 파일 요청으로 봅니다. `.env` 처럼 점으로 시작하는
+    // 이름도 여기서 걸러야 합니다. extname('.env') 는 빈 문자열이라 확장자만
+    // 보면 route 로 오인해서, 없는 파일에 200 을 돌려주게 됩니다.
+    const lastSegment = relative.split('/').pop() ?? '';
+    const looksLikeRoute = !lastSegment.includes('.');
+    if (relative === 'index.html' || looksLikeRoute) {
+      try {
+        const html = await readFile(resolve(publicDir, 'index.html'));
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        });
+        res.end(html);
+        return;
+      } catch {
+        // 빌드를 안 했으면 404 대신 무엇을 해야 하는지 알려줍니다.
+        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(NOT_BUILT_HTML);
+        return;
+      }
     }
 
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

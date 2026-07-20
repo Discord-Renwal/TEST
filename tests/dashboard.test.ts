@@ -175,6 +175,22 @@ describe('정적 파일', () => {
     const res = await fetch(`${base.replace('/api', '')}/../../.env`);
     expect([403, 404]).toContain(res.status);
   });
+
+  it('점이 들어간 이름은 SPA 폴백으로 새지 않는다', async () => {
+    // 회귀 테스트: 클라이언트 라우트 폴백을 넣으면서 `.env` 처럼 확장자가
+    // 없는 것으로 판정되는 이름까지 index.html 로 응답할 뻔했습니다.
+    for (const path of ['/.env', '/config.json', '/app.js']) {
+      const res = await fetch(`${base.replace('/api', '')}${path}`);
+      expect(res.status, path).not.toBe(200);
+    }
+  });
+
+  it('확장자 없는 주소는 클라이언트 라우트로 넘긴다', async () => {
+    // 대시보드를 /points 에서 새로고침해도 열려야 합니다.
+    const res = await fetch(`${base.replace('/api', '')}/points`);
+    // 빌드 전이면 503(빌드 안내), 빌드 후면 200(index.html) 입니다.
+    expect([200, 503]).toContain(res.status);
+  });
 });
 
 describe('명령어 이름 충돌', () => {
