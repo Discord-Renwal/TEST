@@ -15,6 +15,10 @@ import type {
   StatusResponse,
   TimerMessage,
   UserRecord,
+  RestrictedChannel,
+  ChatSettings,
+  AudienceResponse,
+  StreamingRole,
 } from './types';
 
 export class ApiError extends Error {
@@ -281,6 +285,98 @@ export function useEvents() {
     queryKey: EVENTS_KEY,
     queryFn: () => request<{ events: LogEntry[]; lastId: number }>('/events'),
     refetchInterval: 3000,
+    retry: false,
+  });
+}
+
+// ─── 치지직 직접 연동 ────────────────────────────────────────────────────────
+//
+// 아래 쿼리들은 설정 파일이 아니라 치지직 서버 상태를 봅니다.
+// 스트리머 계정이 아니면 400 "스트리머가 아닙니다" 가 오므로, 화면에서 그대로 안내합니다.
+
+export const RESTRICTIONS_KEY = ['restrictions'] as const;
+export const CHAT_SETTINGS_KEY = ['chat-settings'] as const;
+export const AUDIENCE_KEY = ['audience'] as const;
+export const MANAGERS_KEY = ['managers'] as const;
+
+export function useRestrictions() {
+  return useQuery({
+    queryKey: RESTRICTIONS_KEY,
+    queryFn: () =>
+      request<{ data: RestrictedChannel[]; next: string | null }>('/chzzk/restrictions'),
+    retry: false,
+  });
+}
+
+function useChzzkMutation<TVars>(
+  fn: (vars: TVars) => Promise<unknown>,
+  message: string,
+  keys: readonly (readonly string[])[]
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      for (const key of keys) void queryClient.invalidateQueries({ queryKey: key });
+      toast.success(message);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+export function useUnrestrict() {
+  return useChzzkMutation(
+    (channelId: string) => request(`/chzzk/restrictions/${channelId}`, 'DELETE'),
+    '활동 제한을 해제했습니다.',
+    [RESTRICTIONS_KEY]
+  );
+}
+
+export function useRestrict() {
+  return useChzzkMutation(
+    (targetChannelId: string) => request('/chzzk/restrictions', 'POST', { targetChannelId }),
+    '활동을 제한했습니다.',
+    [RESTRICTIONS_KEY]
+  );
+}
+
+export function useTemporaryUnrestrict() {
+  return useChzzkMutation(
+    (channelId: string) => request(`/chzzk/temporary-restrictions/${channelId}`, 'DELETE'),
+    '임시 제한을 해제했습니다.',
+    [RESTRICTIONS_KEY]
+  );
+}
+
+export function useChatSettings() {
+  return useQuery({
+    queryKey: CHAT_SETTINGS_KEY,
+    queryFn: () => request<ChatSettings>('/chzzk/chat-settings'),
+    retry: false,
+  });
+}
+
+export function useSaveChatSettings() {
+  return useChzzkMutation(
+    (values: Partial<ChatSettings>) => request('/chzzk/chat-settings', 'PUT', values),
+    '채팅 설정을 저장했습니다.',
+    [CHAT_SETTINGS_KEY]
+  );
+}
+
+export function useAudience() {
+  return useQuery({
+    queryKey: AUDIENCE_KEY,
+    queryFn: () => request<AudienceResponse>('/chzzk/audience'),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
+export function useManagers() {
+  return useQuery({
+    queryKey: MANAGERS_KEY,
+    queryFn: () => request<{ data: StreamingRole[] }>('/chzzk/managers'),
     retry: false,
   });
 }

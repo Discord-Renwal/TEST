@@ -104,3 +104,49 @@ export interface StatusResponse {
   stats: BotStats | null;
   configPath: string;
 }
+
+// ─── 치지직 직접 연동 응답 ───────────────────────────────────────────────────
+
+export interface RestrictedChannel {
+  restrictedChannelId: string;
+  restrictedChannelName: string;
+  createdDate: string;
+  releaseDate: string;
+}
+
+export interface ChatSettings {
+  chatAvailableCondition: 'NONE' | 'REAL_NAME';
+  chatAvailableGroup: 'ALL' | 'FOLLOWER' | 'MANAGER' | 'SUBSCRIBER';
+  minFollowerMinute: number;
+  allowSubscriberInFollowerMode: boolean;
+  chatSlowModeSec: number;
+  chatEmojiMode: boolean;
+}
+
+export interface Follower {
+  channelId: string;
+  channelName: string;
+  createdDate: string;
+}
+
+export interface Subscriber {
+  channelId: string;
+  channelName: string;
+  month: number;
+  tierNo: number;
+  createdDate: string;
+}
+
+export interface AudienceResponse {
+  followers: Follower[];
+  subscribers: Subscriber[];
+  followersError: string | null;
+  subscribersError: string | null;
+}
+
+export interface StreamingRole {
+  managerChannelId: string;
+  managerChannelName: string;
+  userRole: string;
+  createdDate: string;
+}

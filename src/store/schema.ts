@@ -58,6 +58,13 @@ export const customCommand = z.object({
   /** 값을 수정할 수 있는 역할 (list/counter 에서만 의미 있음) */
   editRoles: z.array(userRoleCode).default(['streamer', 'streaming_channel_manager']),
 
+  /**
+   * 구독자만 쓸 수 있게 제한합니다.
+   * CHAT 이벤트에는 구독 여부가 없어서, 구독자 목록을 주기적으로 받아 대조합니다.
+   * 스트리머 계정이 아니면 목록 조회가 막혀 이 옵션이 동작하지 않습니다.
+   */
+  subscriberOnly: z.boolean().default(false),
+
   /** 같은 사람이 다시 쓰기까지 기다려야 하는 시간(초) */
   cooldownSec: z.number().int().min(0).max(3600).default(3),
   enabled: z.boolean().default(true),

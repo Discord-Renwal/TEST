@@ -39,6 +39,7 @@ export function CommandCard({ command, prefix }: CommandCardProps) {
     handleSubmit,
     control,
     watch,
+    setValue,
     reset,
     formState: { errors, isDirty },
   } = useForm<CustomCommand>({
@@ -220,6 +221,13 @@ export function CommandCard({ command, prefix }: CommandCardProps) {
                 name="editRoles"
                 label="값을 수정할 수 있는 역할"
                 hint="목록형·카운터에서만 의미가 있습니다."
+              />
+
+              <Switch
+                checked={watch('subscriberOnly')}
+                onCheckedChange={(v) => setValue('subscriberOnly', v, { shouldDirty: true })}
+                label="구독자 전용"
+                hint="구독자 목록을 주기적으로 받아 대조합니다. 스트리머 계정이 아니면 목록 조회가 막혀 동작하지 않습니다. 관리자는 항상 사용할 수 있습니다."
               />
 
               <Field

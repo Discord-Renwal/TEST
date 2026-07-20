@@ -181,15 +181,48 @@ export class ChzzkSessionClient {
     });
   }
 
+  /**
+   * SYSTEM `connected` 직후 구독을 겁니다.
+   *
+   * 여기서 실패하면 **소켓은 붙어 있는데 아무 이벤트도 안 오는 상태**가 됩니다.
+   * 봇은 멀쩡해 보이는데 채팅을 하나도 못 받는, 가장 알아채기 어려운 고장입니다.
+   * 그래서 실패를 그냥 알리고 끝내지 않고 재시도하고, 그래도 안 되면 세션을
+   * 처음부터 새로 만듭니다.
+   *
+   * 특히 연결 직후 404 NOT_FOUND 가 나는 경우가 있는데, 서버가 방금 만든 세션을
+   * 아직 구독 API 쪽에 반영하지 못한 것으로 보입니다. 짧게 기다렸다 다시 걸면 붙습니다.
+   */
   private async subscribeAll(sessionKey: string): Promise<void> {
-    try {
-      for (const event of this.events) {
-        await this.sessions.subscribe(event, sessionKey, this.authMode);
-        this.log.info(`${event} 이벤트를 구독했습니다.`);
+    const MAX_TRIES = 4;
+
+    for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      try {
+        for (const event of this.events) {
+          await this.sessions.subscribe(event, sessionKey, this.authMode);
+          this.log.info(`${event} 이벤트를 구독했습니다.`);
+        }
+        this.emit('ready', { sessionKey });
+        return;
+      } catch (error) {
+        // 세션이 이미 바뀌었다면 이 시도는 의미가 없습니다.
+        if (this.sessionKey !== sessionKey || this.closed) return;
+
+        if (attempt < MAX_TRIES) {
+          const delayMs = 300 * 2 ** (attempt - 1); // 300 · 600 · 1200ms
+          this.log.warn(
+            `이벤트 구독 실패 — ${delayMs}ms 후 재시도합니다 (${attempt}/${MAX_TRIES}).`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        this.emit('error', asError(error, '이벤트 구독에 실패했습니다.'));
+        this.log.error('구독에 계속 실패해 세션을 새로 만듭니다.');
+        // 구독 없는 소켓은 쓸모가 없습니다. 끊고 처음부터 다시 붙습니다.
+        this.teardownSocket();
+        this.scheduleReconnect();
+        return;
       }
-      this.emit('ready', { sessionKey });
-    } catch (error) {
-      this.emit('error', asError(error, '이벤트 구독에 실패했습니다.'));
     }
   }
 

@@ -16,6 +16,8 @@ import { isValidPattern } from '../features/matcher.js';
 import type { UserStore } from '../store/userStore.js';
 import type { SongQueueStore } from '../store/songQueue.js';
 import type { EventLog } from '../store/eventLog.js';
+import type { ChzzkClient } from '../client.js';
+import { ChzzkApiError } from '../core/errors.js';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -49,6 +51,8 @@ export interface DashboardOptions {
   users?: UserStore | undefined;
   songs?: SongQueueStore | undefined;
   eventLog?: EventLog | undefined;
+  /** 치지직 서버 상태를 직접 다루는 화면(제재·채팅설정)에 필요합니다. */
+  chzzk?: ChzzkClient | undefined;
   runtime?: BotRuntime | undefined;
   logger: Logger;
   port?: number;
@@ -276,6 +280,102 @@ export function createDashboard(options: DashboardOptions) {
       }
     }
 
+    // ─ 치지직 직접 연동 (제재 / 채팅설정 / 시청자 / 매니저)
+    //
+    // 이 구간은 설정 파일이 아니라 치지직 서버 상태를 직접 다룹니다.
+    // 스트리머 계정이 아니면 400 "스트리머가 아닙니다" 가 나오므로,
+    // 그 사실을 프런트가 구분할 수 있도록 코드를 그대로 전달합니다.
+    if (path.startsWith('/api/chzzk/')) {
+      if (!options.chzzk) return sendJson(res, 503, { error: '봇이 실행 중이 아닙니다.' });
+      const chzzk = options.chzzk;
+
+      try {
+        if (path === '/api/chzzk/restrictions' && method === 'GET') {
+          const page = await chzzk.restrictions.list({ size: 30 });
+          return sendJson(res, 200, { data: page.data, next: page.page?.next ?? null });
+        }
+
+        if (path === '/api/chzzk/restrictions' && method === 'POST') {
+          const body = (await readJson(req)) as { targetChannelId?: string };
+          if (!body.targetChannelId) return sendJson(res, 400, { error: 'targetChannelId 필요' });
+          await chzzk.restrictions.restrict(body.targetChannelId);
+          return sendJson(res, 200, { ok: true });
+        }
+
+        const restrictMatch = /^\/api\/chzzk\/restrictions\/([\w-]+)$/.exec(path);
+        if (restrictMatch && method === 'DELETE') {
+          await chzzk.restrictions.unrestrict(restrictMatch[1]!);
+          return sendJson(res, 200, { ok: true });
+        }
+
+        // 임시 제한 해제는 채팅 채널 ID 가 필요합니다. 최근 채팅에서 얻어 둔 값을 씁니다.
+        const tempMatch = /^\/api\/chzzk\/temporary-restrictions\/([\w-]+)$/.exec(path);
+        if (tempMatch && method === 'DELETE') {
+          const chatChannelId = options.runtime?.lastChatChannelId;
+          if (!chatChannelId) {
+            return sendJson(res, 409, {
+              error: '채팅 채널 ID를 아직 모릅니다. 방송 채팅이 한 번 오간 뒤에 시도하세요.',
+            });
+          }
+          await chzzk.restrictions.temporaryUnrestrict({
+            targetChannelId: tempMatch[1]!,
+            chatChannelId,
+          });
+          return sendJson(res, 200, { ok: true });
+        }
+
+        if (path === '/api/chzzk/chat-settings') {
+          if (method === 'GET') return sendJson(res, 200, await chzzk.chat.getSettings());
+          if (method === 'PUT') {
+            const body = await readJson(req);
+            await chzzk.chat.updateSettings(
+              body as Parameters<typeof chzzk.chat.updateSettings>[0]
+            );
+            return sendJson(res, 200, await chzzk.chat.getSettings());
+          }
+        }
+
+        if (path === '/api/chzzk/audience' && method === 'GET') {
+          // 팔로워와 구독자를 함께 돌려줍니다. 각각 따로 부르면 왕복이 늘어납니다.
+          const [followers, subscribers] = await Promise.allSettled([
+            chzzk.channels.followers({ size: 50 }),
+            chzzk.channels.subscribers({ size: 50, sort: 'RECENT' }),
+          ]);
+          return sendJson(res, 200, {
+            followers: followers.status === 'fulfilled' ? followers.value : [],
+            subscribers: subscribers.status === 'fulfilled' ? subscribers.value : [],
+            followersError:
+              followers.status === 'rejected' ? describeError(followers.reason) : null,
+            subscribersError:
+              subscribers.status === 'rejected' ? describeError(subscribers.reason) : null,
+          });
+        }
+
+        if (path === '/api/chzzk/managers' && method === 'GET') {
+          return sendJson(res, 200, { data: await chzzk.channels.streamingRoles() });
+        }
+
+        if (path === '/api/chzzk/live-setting' && method === 'GET') {
+          return sendJson(res, 200, await chzzk.lives.getSetting());
+        }
+
+        if (path === '/api/chzzk/live-setting' && method === 'PATCH') {
+          const body = await readJson(req);
+          await chzzk.lives.updateSetting(body as Parameters<typeof chzzk.lives.updateSetting>[0]);
+          return sendJson(res, 200, await chzzk.lives.getSetting());
+        }
+
+        if (path === '/api/chzzk/categories' && method === 'GET') {
+          const query = new URL(req.url ?? '', 'http://x').searchParams.get('q') ?? '';
+          if (!query.trim()) return sendJson(res, 200, { data: [] });
+          return sendJson(res, 200, { data: await chzzk.categories.search(query, { size: 10 }) });
+        }
+      } catch (error) {
+        const status = error instanceof ChzzkApiError ? error.status || 400 : 500;
+        return sendJson(res, status, { error: describeError(error) });
+      }
+    }
+
     // ─ 이벤트 로그
     if (path === '/api/events' && method === 'GET') {
       if (!options.eventLog) return sendJson(res, 200, { events: [], lastId: 0 });
@@ -481,6 +581,15 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
   return JSON.parse(raw);
+}
+
+/** 치지직 오류를 프런트가 그대로 보여줄 수 있는 문장으로 바꿉니다. */
+function describeError(error: unknown): string {
+  if (error instanceof ChzzkApiError) {
+    // "[400] GET /path — 스트리머가 아닙니다." 에서 뒷부분만 남깁니다.
+    return error.message.split('—').pop()?.trim() ?? error.message;
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatIssues(issues: { path: (string | number)[]; message: string }[]): string {

@@ -13,6 +13,9 @@ import { PointsPage } from './pages/PointsPage';
 import { GamesPage } from './pages/GamesPage';
 import { SongsPage } from './pages/SongsPage';
 import { BannedWordsPage } from './pages/BannedWordsPage';
+import { RestrictionsPage } from './pages/RestrictionsPage';
+import { ChatSettingsPage } from './pages/ChatSettingsPage';
+import { AudiencePage } from './pages/AudiencePage';
 import { PermissionsPage } from './pages/PermissionsPage';
 import { useConfig, useStatus } from './lib/api';
 import type { BotConfig, BotStats } from './lib/types';
@@ -72,6 +75,12 @@ function Pages({ tab, config, stats }: { tab: TabId; config: BotConfig; stats: B
       return <SongsPage config={config} />;
     case 'banned':
       return <BannedWordsPage config={config} />;
+    case 'restrictions':
+      return <RestrictionsPage />;
+    case 'chatSettings':
+      return <ChatSettingsPage />;
+    case 'audience':
+      return <AudiencePage />;
     case 'permissions':
       return <PermissionsPage config={config} />;
   }

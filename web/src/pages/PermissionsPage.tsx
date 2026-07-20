@@ -1,13 +1,14 @@
 import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Card, CardTitle } from '../components/ui/Card';
+import { UserCheck } from 'lucide-react';
+import { Badge, Card, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { CheckChip, Field, Textarea } from '../components/ui/Field';
 import { PageHeader } from '../components/Layout';
 import { formResolver } from '../lib/form';
 import { ROLES } from '../lib/constants';
 import { permissionSettings, type BotConfig, type UserRoleCodeValue } from '../lib/types';
-import { useSaveSection } from '../lib/api';
+import { useManagers, useSaveSection } from '../lib/api';
 
 type Permissions = BotConfig['permissions'];
 
@@ -20,6 +21,7 @@ const fromLines = (text: string) =>
 
 export function PermissionsPage({ config }: { config: BotConfig }) {
   const save = useSaveSection('permissions');
+  const managers = useManagers();
 
   const {
     handleSubmit,
@@ -99,6 +101,44 @@ export function PermissionsPage({ config }: { config: BotConfig }) {
                   onChange={(event) => field.onChange(fromLines(event.target.value))}
                   placeholder="78bb78aeed19a0d610758e07a0b0bcf6"
                 />
+
+                {/*
+                  치지직에 등록된 매니저를 가져와 한 번에 채웁니다.
+                  손으로 채널 ID 를 옮겨 적는 건 실수하기 쉽습니다.
+                */}
+                {managers.data && managers.data.data.length > 0 ? (
+                  <div className="mt-2 rounded-lg border border-[var(--surface-border)] p-3">
+                    <p className="mb-2 flex items-center gap-1.5 text-xs font-medium">
+                      <UserCheck className="size-3.5 text-brand" />
+                      치지직에 등록된 매니저 {managers.data.data.length}명
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {managers.data.data.map((manager) => {
+                        const already = field.value.includes(manager.managerChannelId);
+                        return (
+                          <button
+                            key={manager.managerChannelId}
+                            type="button"
+                            disabled={already}
+                            onClick={() =>
+                              field.onChange([...field.value, manager.managerChannelId])
+                            }
+                            className="disabled:opacity-50"
+                          >
+                            <Badge tone={already ? 'brand' : 'neutral'}>
+                              {manager.managerChannelName}
+                              {already ? ' ✓' : ' +'}
+                            </Badge>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : managers.isError ? (
+                  <p className="mt-2 text-xs text-[var(--surface-muted)]">
+                    매니저 목록을 가져오지 못했습니다 — {managers.error.message}
+                  </p>
+                ) : null}
               </Field>
             )}
           />

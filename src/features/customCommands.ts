@@ -39,12 +39,24 @@ export class CustomCommandEngine {
     event: ChatEvent,
     config: BotConfig,
     commandName: string,
-    args: string[]
+    args: string[],
+    /** 구독자 전용 명령 판정. 구독자 목록을 못 받는 상태면 undefined 를 넘기세요. */
+    isSubscriber?: (channelId: string) => boolean
   ): Promise<CommandOutcome> {
     const command = this.store.findCommand(commandName);
     if (!command || !command.enabled) return NOT_HANDLED;
 
     if (!hasRole(event, command.useRoles, config.permissions)) return NOT_HANDLED;
+
+    // 구독자 전용은 관리자에게는 적용하지 않습니다. 스트리머가 자기 명령을 못 쓰면 곤란합니다.
+    if (command.subscriberOnly && !isAdmin(event, config.permissions)) {
+      if (!isSubscriber) {
+        return { reply: '구독자 확인이 불가능해 이 명령을 사용할 수 없습니다.', handled: true };
+      }
+      if (!isSubscriber(event.senderChannelId)) {
+        return { reply: `${command.name} 은(는) 구독자 전용입니다.`, handled: true };
+      }
+    }
 
     const canEdit = hasRole(event, command.editRoles, config.permissions);
     const wantsEdit = args.length > 0 && command.type !== 'text';

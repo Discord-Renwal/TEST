@@ -13,6 +13,7 @@ import { SpamFilter } from '../features/spamFilter.js';
 import { PointEngine, formatPoints } from '../features/points.js';
 import { GameEngine, type GameResult } from '../features/games.js';
 import { ChatterIndex } from '../features/chatterIndex.js';
+import { AudienceIndex } from '../features/audienceIndex.js';
 import { TimerScheduler } from '../features/timers.js';
 import { ChannelContext, expandVariables, pickRandomVariant } from '../features/variables.js';
 import { findBuiltin, BUILTIN_COMMANDS } from '../features/builtinCommands.js';
@@ -59,6 +60,13 @@ export class BotRuntime {
   private readonly points: PointEngine;
   private readonly games: GameEngine;
   private readonly chatters = new ChatterIndex();
+  private readonly audience: AudienceIndex;
+  /**
+   * 마지막으로 관측한 채팅 채널 ID.
+   * 임시 제한 해제 API 가 이 값을 요구하는데, 대시보드에는 이 정보가 없어서
+   * 지나가는 채팅 이벤트에서 주워 둡니다.
+   */
+  private lastChatChannel: string | undefined;
   private readonly channel: ChannelContext;
   private readonly sender: ChatSender;
   private readonly timers: TimerScheduler;
@@ -86,6 +94,7 @@ export class BotRuntime {
     this.points = new PointEngine(users);
     this.games = new GameEngine(users);
     this.channel = new ChannelContext(chzzk, 60_000, chzzk.logger);
+    this.audience = new AudienceIndex(chzzk, deps.botChannelId, 10 * 60_000, chzzk.logger);
     this.log = chzzk.logger.child('runtime');
 
     this.sender = new ChatSender(chzzk.chat, {
@@ -103,6 +112,17 @@ export class BotRuntime {
   start(): void {
     this.timers.start();
     void this.channel.refresh();
+    void this.audience.refresh();
+  }
+
+  /** 임시 제한 해제에 필요합니다. 채팅이 한 번도 안 왔으면 undefined */
+  get lastChatChannelId(): string | undefined {
+    return this.lastChatChannel;
+  }
+
+  /** 구독자 전용 명령이 동작할 수 있는 상태인지 */
+  get subscriberDataAvailable(): boolean {
+    return this.audience.isSubscriberDataAvailable;
   }
 
   stop(): void {
@@ -128,6 +148,8 @@ export class BotRuntime {
 
     this.chatters.remember(event);
     this.timers.noteChat();
+    this.lastChatChannel = event.chatChannelId;
+    void this.audience.refresh();
 
     const nickname = event.profile?.nickname ?? '';
     const firstEver = this.deps.users.isFirstEver(event.senderChannelId);
@@ -253,7 +275,15 @@ export class BotRuntime {
     }
 
     // 사용자 정의 명령
-    const outcome = await this.commands.execute(event, config, name, args);
+    const outcome = await this.commands.execute(
+      event,
+      config,
+      name,
+      args,
+      this.audience.isSubscriberDataAvailable
+        ? (channelId) => this.audience.isSubscriber(channelId)
+        : undefined
+    );
     if (outcome.handled) {
       this.stats.commandsRun += 1;
       if (outcome.reply) {

@@ -386,6 +386,109 @@ const banUser: BuiltinCommand = {
   },
 };
 
+const unbanUser: BuiltinCommand = {
+  names: ['밴해제', '차단해제', 'unban'],
+  usage: '!밴해제 <닉네임>',
+  description: '활동 제한을 풉니다.',
+  adminOnly: true,
+  run: async ({ args, chzzk, chatters, log, event }) => {
+    const nickname = args[0];
+    if (!nickname) return '사용법: !밴해제 <닉네임>';
+
+    const target = chatters.find(nickname);
+    if (!target) {
+      // 제한당한 사람은 채팅을 못 하니 색인에 없을 수 있습니다.
+      return `"${nickname}" 님을 찾지 못했습니다. 대시보드의 제재 관리에서 해제하세요.`;
+    }
+
+    try {
+      await chzzk.restrictions.unrestrict(target.channelId);
+      log.push('moderation', `활동 제한 해제: ${target.nickname}`, {
+        actor: event.profile?.nickname,
+      });
+      return `${target.nickname}님의 활동 제한을 해제했습니다.`;
+    } catch (error) {
+      return describeApiError(error, '활동 제한 해제');
+    }
+  },
+};
+
+const untimeoutUser: BuiltinCommand = {
+  names: ['타임아웃해제', '임시제한해제'],
+  usage: '!타임아웃해제 <닉네임>',
+  description: '임시 제한을 풉니다.',
+  adminOnly: true,
+  run: async ({ event, args, chzzk, chatters, log }) => {
+    const nickname = args[0];
+    if (!nickname) return '사용법: !타임아웃해제 <닉네임>';
+
+    const target = chatters.find(nickname);
+    if (!target) return `"${nickname}" 님을 찾지 못했습니다. 대시보드에서 해제하세요.`;
+
+    try {
+      await chzzk.restrictions.temporaryUnrestrict({
+        targetChannelId: target.channelId,
+        chatChannelId: event.chatChannelId,
+      });
+      log.push('moderation', `임시 제한 해제: ${target.nickname}`, {
+        actor: event.profile?.nickname,
+      });
+      return `${target.nickname}님의 임시 제한을 해제했습니다.`;
+    } catch (error) {
+      return describeApiError(error, '임시 제한 해제');
+    }
+  },
+};
+
+/** 채팅 참여 대상을 한 번에 바꿉니다. 방송 중 난입 대응에 씁니다. */
+const chatMode: BuiltinCommand = {
+  names: ['채팅모드', 'chatmode'],
+  usage: '!채팅모드 <전체|팔로워|구독자|매니저>',
+  description: '채팅할 수 있는 대상을 바꿉니다.',
+  adminOnly: true,
+  run: async ({ args, chzzk, log, event }) => {
+    const map: Record<string, 'ALL' | 'FOLLOWER' | 'SUBSCRIBER' | 'MANAGER'> = {
+      전체: 'ALL',
+      all: 'ALL',
+      팔로워: 'FOLLOWER',
+      follower: 'FOLLOWER',
+      구독자: 'SUBSCRIBER',
+      subscriber: 'SUBSCRIBER',
+      매니저: 'MANAGER',
+      manager: 'MANAGER',
+    };
+
+    const group = map[(args[0] ?? '').toLowerCase()];
+    if (!group) return '사용법: !채팅모드 <전체|팔로워|구독자|매니저>';
+
+    try {
+      await chzzk.chat.updateSettings({ chatAvailableGroup: group });
+      log.push('system', `채팅 모드 → ${group}`, { actor: event.profile?.nickname });
+      const label = { ALL: '전체', FOLLOWER: '팔로워', SUBSCRIBER: '구독자', MANAGER: '매니저' }[
+        group
+      ];
+      return `채팅 참여 대상을 "${label}" 로 바꿨습니다.`;
+    } catch (error) {
+      return describeApiError(error, '채팅 모드 변경');
+    }
+  },
+};
+
+const followerCount: BuiltinCommand = {
+  names: ['팔로워', 'follower', 'followers'],
+  usage: '!팔로워',
+  description: '팔로워 수를 알려줍니다.',
+  run: async ({ chzzk, config: _config, event }) => {
+    try {
+      const channel = await chzzk.channels.get(event.channelId);
+      if (!channel) return null;
+      return `${channel.channelName} 채널 팔로워 ${channel.followerCount.toLocaleString('ko-KR')}명`;
+    } catch {
+      return null;
+    }
+  },
+};
+
 // ─── 정보 ─────────────────────────────────────────────────────────────────────
 
 const uptime: BuiltinCommand = {
@@ -411,6 +514,10 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
   setNotice,
   timeoutUser,
   banUser,
+  unbanUser,
+  untimeoutUser,
+  chatMode,
+  followerCount,
   uptime,
 ];
 

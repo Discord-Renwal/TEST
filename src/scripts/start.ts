@@ -47,6 +47,7 @@ const dashboard = createDashboard({
   users,
   songs,
   eventLog,
+  chzzk,
   runtime,
   logger: chzzk.logger,
   port: env.DASHBOARD_PORT,

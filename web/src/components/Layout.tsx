@@ -8,8 +8,11 @@ import {
   Moon,
   Music,
   MessagesSquare,
+  Gavel,
+  SlidersVertical,
   Radio,
   ShieldBan,
+  Users,
   SlidersHorizontal,
   Sun,
   TerminalSquare,
@@ -32,6 +35,9 @@ export type TabId =
   | 'songs'
   | 'notifications'
   | 'banned'
+  | 'restrictions'
+  | 'chatSettings'
+  | 'audience'
   | 'permissions';
 
 export const TABS: { id: TabId; label: string; icon: LucideIcon; group: string }[] = [
@@ -45,6 +51,9 @@ export const TABS: { id: TabId; label: string; icon: LucideIcon; group: string }
   { id: 'games', label: '미니게임', icon: Dices, group: '참여' },
   { id: 'songs', label: '신청곡', icon: Music, group: '참여' },
   { id: 'banned', label: '금칙어 · 스팸', icon: ShieldBan, group: '관리' },
+  { id: 'restrictions', label: '제재 관리', icon: Gavel, group: '관리' },
+  { id: 'chatSettings', label: '채팅 설정', icon: SlidersVertical, group: '관리' },
+  { id: 'audience', label: '팔로워 · 구독자', icon: Users, group: '관리' },
   { id: 'permissions', label: '봇 권한', icon: UserCog, group: '관리' },
 ];
 
