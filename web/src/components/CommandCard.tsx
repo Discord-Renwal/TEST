@@ -208,20 +208,19 @@ export function CommandCard({ command, prefix }: CommandCardProps) {
                 <Input {...register('response')} placeholder="비우면 기본 형식으로 출력합니다" />
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <RoleField
-                  control={control}
-                  name="useRoles"
-                  label="사용할 수 있는 역할"
-                  hint="이 명령을 호출(조회)할 수 있는 사람입니다."
-                />
-                <RoleField
-                  control={control}
-                  name="editRoles"
-                  label="값을 수정할 수 있는 역할"
-                  hint="목록형·카운터에서만 의미가 있습니다."
-                />
-              </div>
+              {/* 역할 칩 4개가 한 줄에 들어가도록 전체 너비를 씁니다. */}
+              <RoleField
+                control={control}
+                name="useRoles"
+                label="사용할 수 있는 역할"
+                hint="이 명령을 호출(조회)할 수 있는 사람입니다."
+              />
+              <RoleField
+                control={control}
+                name="editRoles"
+                label="값을 수정할 수 있는 역할"
+                hint="목록형·카운터에서만 의미가 있습니다."
+              />
 
               <Field
                 label="쿨다운 (초)"
